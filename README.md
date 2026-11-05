@@ -121,19 +121,41 @@ An optional overlay puts one Gateway in front of both pools and selects the pool
 `x-switchyard-pool` header instead. It is
 [not verified on BNK yet](docs/FEASIBILITY.md#can-bnk-do-what-the-design-needs).
 
+## Behind BNK's AI gateway (Polaris), with the pool bridge
+
+With Polaris as the front door, the adapter does two jobs and serves no chat API
+(`deploy/instruqt/adapter.toml`):
+
+1. **Model router** (ext_proc, port 50051). Polaris's profile calls it for each request through
+   the semantic-router slot. Switchyard decides; the answer rewrites `model` to a Polaris AIModel
+   (`sy-small`, `sy-large`).
+2. **Pool bridge** (HTTP, port 8000). Those AIModels' providers point at
+   `http://switchyard-router.<ns>:8000/pools/<pool>/v1`. For each request the bridge asks the
+   pool's endpoint picker (the F5 EPP, gRPC ext_proc on 9002, the same exchange TMM uses) which pod
+   should serve it, and forwards the request there.
+
+The bridge exists because in BNK 2.4.2 a Polaris provider is a URL and cannot name an
+InferencePool, and a provider URL that is a BNK Gateway VIP is reset. If the picker does not
+answer within `pick_timeout_ms` or the chosen pod is gone, the bridge fails open to the pool's
+Service, as `failureMode: FailOpen` says. Every response carries `x-pool-pick` (`epp`,
+`fail-open`, `epp-refused`) and `x-pool-endpoint`; the counters are `sy_adapter_pool_bridge_*`.
+
 ## What was tested, and where
 
 | What | Where | Result |
 |---|---|---|
-| Rust unit tests (config, tenancy) | `cargo test` | 10 pass |
-| Integration tests: upstream request shape, fallback, error passthrough, judge fail-open, routing timeout | in-process scripted upstreams | 6 pass |
+| Rust unit tests (config, tenancy, picker answers) | `cargo test` | 14 pass |
+| Integration tests: upstream request shape, fallback, error passthrough, judge fail-open, routing timeout, ext_proc decisions and policy | in-process scripted upstreams | 11 pass |
+| Pool bridge against a scripted endpoint picker: forward to the picked pod, fail open (picker down, pod gone), picker refusal | in-process | 4 pass |
 | 34 end-to-end checks: three algorithms, governance, streaming, tool calls, cancellation, metrics | local processes, `make demo-local` | all pass |
 | The same 34 checks with the real container images | kind cluster, suite run from a pod (`make kind-smoke`) | all pass |
 | Manifests against Gateway API v1.3.0, GAIE v1.4.0 and the F5EPP CRD from a BNK 2.4 cluster | strict server-side dry run on kind | 36 resources valid |
 | Trace correlation: adapter span, `libsy.run`, judge call, answer call | Jaeger via OTLP/HTTP | verified |
 | Prometheus scrape and every Grafana panel query | local Prometheus and Grafana | verified |
-| TMM consulting the F5EPP for traffic from the adapter | needs a BNK cluster | **not tested** |
-| Adapter to internal VIP hairpin through TMM | needs a BNK cluster | **not tested** |
+| Polaris calling Switchyard over ext_proc, easy and hard steps on different models, streaming | BNK 2.4.2 lab | verified |
+| TMM consulting the F5EPP for a pool Gateway | BNK 2.4.2 lab, from outside the cluster | verified (24 of 24, both pods) |
+| Polaris → Switchyard → pool bridge → F5 EPP → pod, one chain | BNK 2.4.2 lab | verified (every request picked by the EPP, 5-10 ms per pick) |
+| Polaris provider pointing at a pool Gateway VIP | BNK 2.4.2 lab | reset; the reason the bridge exists |
 | Single-Gateway header-match overlay | needs a BNK cluster | **not tested** |
 | GPU, TTFT and EPP numbers on real hardware | needs GPUs | **not tested** |
 

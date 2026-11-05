@@ -74,6 +74,8 @@ Nothing here needs a change to libsy's routing algorithms.
    pointing it at a BNK Gateway VIP is reset, so traffic governed by the AI gateway cannot reach the
    F5 EPP. A `backendRef` to an InferencePool on the deployment (as HTTPRoute has) would join the two
    paths: Polaris for identity and budgets, its router slot for Switchyard, the EPP for the pod.
+   Until then the adapter's pool bridge does it (docs/FEASIBILITY.md): one extra in-cluster hop that
+   calls the EPP the way TMM does. A native field would remove that hop and keep the request in TMM.
 2. A documented statement on header-match HTTPRoutes with several InferencePool backends.
 3. Whether the EPP logs or exports a request ID, so per-request EPP decisions can be joined
    to adapter traces.

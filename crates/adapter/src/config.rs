@@ -23,6 +23,33 @@ pub struct Config {
     /// Optional Envoy ext_proc server: decide the model inside a gateway's request path.
     #[serde(default)]
     pub ext_proc: Option<ExtProcConfig>,
+    /// Optional pool bridge: an InferencePool upstream for gateways that can only call a URL.
+    #[serde(default)]
+    pub pool_bridge: Option<PoolBridgeConfig>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct PoolBridgeConfig {
+    pub listen: String,
+    /// How long the endpoint picker may take before the request fails open to the Service.
+    #[serde(default = "default_pick_timeout_ms")]
+    pub pick_timeout_ms: u64,
+    pub pools: BTreeMap<String, BridgePool>,
+}
+
+fn default_pick_timeout_ms() -> u64 {
+    500
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct BridgePool {
+    /// The pool's endpoint picker, gRPC ext_proc (the InferencePool's endpointPickerRef).
+    pub epp: String,
+    /// The pool's Service, used when the picker is unavailable (FailOpen) and for requests
+    /// without a body.
+    pub fallback_url: String,
 }
 
 #[derive(Deserialize, Clone)]
@@ -244,6 +271,23 @@ impl Config {
                 "identity.trusted_header is required when identity.mode = \"trusted_header\""
             );
         }
+        if let Some(bridge) = &self.pool_bridge {
+            ensure!(
+                !bridge.pools.is_empty(),
+                "pool_bridge needs at least one pool"
+            );
+            for (name, pool) in &bridge.pools {
+                ensure!(
+                    pool.epp.starts_with("http://") || pool.epp.starts_with("https://"),
+                    "pool_bridge.pools.{name}: epp must be an http(s) URL of the picker's gRPC port"
+                );
+                ensure!(
+                    pool.fallback_url.starts_with("http://")
+                        || pool.fallback_url.starts_with("https://"),
+                    "pool_bridge.pools.{name}: fallback_url must be an http(s) URL"
+                );
+            }
+        }
         let known = |name: &str| self.models.contains_key(name);
         for (name, model) in &self.models {
             ensure!(
@@ -343,8 +387,8 @@ impl Config {
             );
         }
         ensure!(
-            self.server.chat_api || self.ext_proc.is_some(),
-            "server.chat_api = false needs [ext_proc], or the adapter serves nothing"
+            self.server.chat_api || self.ext_proc.is_some() || self.pool_bridge.is_some(),
+            "server.chat_api = false needs [ext_proc] or [pool_bridge], or the adapter serves nothing"
         );
         if self.identity.mode == IdentityMode::ApiKey && self.server.chat_api {
             ensure!(

@@ -35,9 +35,9 @@ opentelemetry.workspace = true
 opentelemetry_sdk.workspace = true
 opentelemetry-otlp.workspace = true
 uuid.workspace = true
+reqwest.workspace = true
+tokio-stream.workspace = true
 envoy-types = "0.7"
 tonic = "0.14"
 
 [dev-dependencies]
-reqwest.workspace = true
-tokio-stream.workspace = true

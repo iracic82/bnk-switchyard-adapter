@@ -108,7 +108,17 @@ These were run on a live BNK 2.4.2 lab cluster.
   field. A Polaris provider whose URL is another BNK Gateway VIP got a TCP reset, while the same VIP
   worked from outside. The lab's existing Polaris models point at plain Services for the same
   reason. **So in BNK 2.4.2 the AI gateway path (identity, budgets, Switchyard) and the
-  InferencePool path (EPP endpoint choice) are two entry points, not one chain.**
+  InferencePool path (EPP endpoint choice) are two entry points, not one chain** without help.
+- **The pool bridge makes it one chain.** F5's EPP (`f5-epp:v0.12.0-0.2.4`) is the Inference
+  Extension's endpoint picker: plaintext gRPC ext_proc on 9002. The adapter's pool bridge
+  (`[pool_bridge]`, `crates/adapter/src/pool_bridge.rs`) plays the gateway's part in that exchange:
+  it sends the request headers and body, reads `x-gateway-destination-endpoint`, forwards to that
+  pod, and reports the response back. With Polaris providers pointing at the bridge
+  (`http://switchyard-router.<ns>:8000/pools/<pool>/v1`), every request went client → Polaris
+  (key, tenant) → Switchyard (model, ~0.4 s) → bridge → F5 EPP (pod, 5-10 ms) → model pod. All
+  requests were picked by the EPP and both pods of each pool served traffic. If the EPP does not
+  answer in 500 ms or the chosen pod is gone, the bridge fails open to the pool's Service, as the
+  InferencePool's `failureMode: FailOpen` says, and marks it (`x-pool-pick: fail-open`).
 
 ## What cannot be verified here
 

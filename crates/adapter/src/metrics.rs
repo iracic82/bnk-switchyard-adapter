@@ -21,6 +21,8 @@ pub struct Metrics {
     pub cost_usd: prometheus::CounterVec,
     pub fallbacks: IntCounterVec,
     pub inflight: IntGauge,
+    pub bridge_requests: IntCounterVec,
+    pub bridge_pick_seconds: HistogramVec,
 }
 
 const LATENCY_BUCKETS: &[f64] = &[
@@ -109,6 +111,16 @@ impl Metrics {
                 IntGauge::new("sy_adapter_inflight_requests", "Requests in progress")
                     .expect("valid gauge")
             ),
+            bridge_requests: reg!(counter(
+                "sy_adapter_pool_bridge_requests_total",
+                "Pool bridge requests by how the endpoint was chosen",
+                &["pool", "pick"]
+            )),
+            bridge_pick_seconds: reg!(histogram(
+                "sy_adapter_pool_bridge_pick_seconds",
+                "Time the endpoint picker took to choose (or to fail open)",
+                &["pool", "pick"]
+            )),
             registry,
         }
     }

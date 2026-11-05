@@ -7,11 +7,12 @@
 
 Changes against the base: the external Gateway and its route are dropped (Polaris is the
 entry point), the adapter runs in the BNK namespace as Service `switchyard-router` with the
-ext_proc port, pools go to the EPP-enabled namespace, and images come from a public registry.
+ext_proc port (and the pool bridge port when the config has [pool_bridge]), pools go to the EPP-enabled namespace, and images come from a public registry.
 """
 
 import argparse
 import sys
+import tomllib
 
 import yaml
 
@@ -30,11 +31,13 @@ def main():
     p.add_argument("--large-vip", default=None)
     p.add_argument("--gateway-infra", default=None, help="F5BnkGateway name for spec.infrastructure.parametersRef")
     p.add_argument("--kinds", default="", help="comma list: only emit these kinds")
+    p.add_argument("--part-of", default=None, help="value for the app.kubernetes.io/part-of label on every object")
     args = p.parse_args()
     kinds = set(filter(None, args.kinds.split(",")))
     gateway_ns = args.gateway_ns or args.bnk_ns
     vips = {"inference-small": args.small_vip, "inference-large": args.large_vip}
     config = open(args.adapter_config).read().replace("__POOL_NS__", args.pool_ns)
+    bridge = "pool_bridge" in tomllib.loads(config)
     out = []
     for doc in yaml.safe_load_all(sys.stdin):
         if not doc:
@@ -67,9 +70,13 @@ def main():
             if meta["name"] == "switchyard-adapter":
                 meta["name"] = "switchyard-router"
                 spec["containers"][0]["ports"].append({"name": "grpc", "containerPort": 50051})
+                if bridge:
+                    spec["containers"][0]["ports"].append({"name": "bridge", "containerPort": 8000})
         if kind == "Service" and meta["name"] == "switchyard-adapter":
             meta["name"] = "switchyard-router"
             doc["spec"]["ports"].append({"name": "grpc", "port": 50051, "targetPort": "grpc", "appProtocol": "grpc"})
+            if bridge:
+                doc["spec"]["ports"].append({"name": "bridge", "port": 8000, "targetPort": "bridge"})
         if kind == "ServiceAccount":
             meta["name"] = "switchyard-router"
         if kind == "Deployment" and meta["name"] == "switchyard-router":
@@ -85,6 +92,8 @@ def main():
         if kind == "ConfigMap" and "adapter.toml" in doc.get("data", {}):
             meta["name"] = "switchyard-router-config"
             doc["data"]["adapter.toml"] = config
+        if args.part_of:
+            meta.setdefault("labels", {})["app.kubernetes.io/part-of"] = args.part_of
         if kinds and kind not in kinds:
             continue
         out.append(doc)

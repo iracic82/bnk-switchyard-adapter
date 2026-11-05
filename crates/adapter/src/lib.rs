@@ -9,6 +9,7 @@ pub mod extproc;
 pub mod http;
 pub mod live;
 pub mod metrics;
+pub mod pool_bridge;
 pub mod registry;
 pub mod telemetry;
 pub mod tenancy;
@@ -80,6 +81,20 @@ pub async fn serve(
                 .await
             {
                 tracing::error!(%error, "ext_proc server stopped");
+            }
+        });
+    }
+    if let Some(cfg) = &config.pool_bridge {
+        let bridge = Arc::new(pool_bridge::Bridge::new(
+            cfg,
+            Arc::clone(&state.engine.metrics),
+        )?);
+        let app = bridge.router(config.server.max_body_bytes);
+        let bridge_listener = TcpListener::bind(&cfg.listen).await?;
+        tracing::info!(addr = %cfg.listen, pools = ?pool_bridge::describe(cfg), "pool bridge listening");
+        tokio::spawn(async move {
+            if let Err(error) = axum::serve(bridge_listener, app).await {
+                tracing::error!(%error, "pool bridge stopped");
             }
         });
     }

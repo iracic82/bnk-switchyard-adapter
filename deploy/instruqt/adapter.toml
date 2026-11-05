@@ -1,6 +1,10 @@
-# Adapter for the one-VM Instruqt lab. BNK's AI gateway (Polaris) is the front door: it owns
-# client identity, virtual keys, budgets and the upstream hop. The adapter sits in the profile's
-# model-router slot (ext_proc, port 50051) and only decides which model answers.
+# Adapter for a lab where BNK's AI gateway (Polaris) is the front door: it owns client identity,
+# virtual keys, budgets and the upstream hop. The adapter does two jobs for it:
+#
+#   ext_proc (50051)     the profile's model router: decides which model answers
+#   pool bridge (8000)   the models' upstream: asks each InferencePool's F5 endpoint picker which
+#                        pod serves the request, and forwards it there. Polaris providers are URLs
+#                        and cannot name an InferencePool; the bridge is that URL.
 #
 # __POOL_NS__ is replaced at install time with the EPP-enabled namespace.
 
@@ -10,8 +14,8 @@ max_body_bytes = 1048576
 request_timeout_secs = 300
 routing_timeout_secs = 10
 live_view = true
-# The lab shows prompts on the live view, which only cluster operators reach (port-forward; a
-# NetworkPolicy keeps everyone else off port 8080). Set to 0 anywhere real prompts flow.
+# The lab shows prompts on the live view. Only operators should reach port 8080 (port-forward,
+# or a NetworkPolicy that admits only BNK to 50051 and 8000). Set to 0 anywhere real prompts flow.
 live_prompt_preview_chars = 100
 # The adapter only decides for the AI gateway (ext_proc): no client may call it directly.
 chat_api = false
@@ -29,9 +33,22 @@ allowed_models = ["small", "large"]
 listen = "0.0.0.0:50051"
 tenant = "polaris"
 
+# Polaris's providers point here: http://switchyard-router.<ns>.svc.cluster.local:8000/pools/<pool>/v1
+[pool_bridge]
+listen = "0.0.0.0:8000"
+pick_timeout_ms = 500
+
+[pool_bridge.pools.small]
+epp = "http://small-pool-epp.__POOL_NS__.svc.cluster.local:9002"
+fallback_url = "http://small-model.__POOL_NS__.svc.cluster.local:8000"
+
+[pool_bridge.pools.large]
+epp = "http://large-pool-epp.__POOL_NS__.svc.cluster.local:9002"
+fallback_url = "http://large-model.__POOL_NS__.svc.cluster.local:8000"
+
 [models.small]
 provider_model = "Qwen/Qwen3-0.6B"
-# Polaris AIModel the gateway routes to; its provider is the small pool's internal Gateway.
+# Polaris AIModel the gateway routes to; its provider is the pool bridge's small pool.
 gateway_model = "sy-small"
 # Used by the adapter only for the classifier's judge call.
 base_url = "http://small-model.__POOL_NS__.svc.cluster.local:8000/v1"
