@@ -173,23 +173,31 @@ ok "model \"auto\" on $ROUTE_VIP is decided by Switchyard"
 
 step "Switchyard: end-to-end check from the client, and the upstream path"
 ENG=$(cat "$SECRETS_DIR/aigw/$T-eng-key.key")
-ask() { docker exec client curl -s -m 60 -o /dev/null -w '%{http_code}' "http://$ROUTE_VIP/v1/chat/completions" \
-          -H "Authorization: Bearer $ENG" -H 'Content-Type: application/json' -d "{\"model\":\"$1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"; }
-code=$(ask sy-small)
+OUT=/tmp/sy-check.json
+ask() { docker exec client curl -s -m 60 -o /dev/stdout -w '\n%{http_code}' "http://$ROUTE_VIP/v1/chat/completions" \
+          -H "Authorization: Bearer $ENG" -H 'Content-Type: application/json' -d "{\"model\":\"$1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
+          > "$OUT" 2>/dev/null; tail -1 "$OUT"; }
+# Polaris takes a while to push new models, keys and the router hook to the data plane: retry before judging
+ask_until_200() { local code=000 i; for i in $(seq 1 "${2:-36}"); do code=$(ask "$1"); [ "$code" = 200 ] && break; sleep 5; done; echo "$code"; }
+diag() {
+  echo "   last answer: $(head -c 300 "$OUT" | tr '\n' ' ')"
+  kubectl -n $NS logs deploy/switchyard-router --tail=8 2>&1 | sed 's/^/   router: /'
+}
+code=$(ask_until_200 sy-small)
 if [ "$code" != 200 ]; then
-  warn "sy-small through the pool bridge answered $code; pointing the models at the Services (no EPP on this path)"
+  warn "sy-small through the pool bridge answered $code for 3 minutes; trying the models on the Services (no EPP on this path)"; diag
   for spec in "sy-small|small-svc|Qwen/Qwen3-0.6B|100000|400000" "sy-large|large-svc|Qwen/Qwen3-32B|2000000|8000000"; do
     IFS='|' read -r name prov up in out <<<"$spec"
     kubectl -n $NS patch aimodels.inference.k8s.f5.com "$name" --type merge -p "$(jq -n --arg p "${REF[$prov]##*/}" --arg u "$up" --argjson i "$in" --argjson o "$out" \
       '{spec:{deployments:[{providerRef:{name:$p},upstream:$u,dialects:["openai"],weight:100,state:"Active",pricing:{inputPerMtok:$i,outputPerMtok:$o}}]}}')" >/dev/null
   done
-  sleep 10; code=$(ask sy-small)
+  code=$(ask_until_200 sy-small 24)
   echo "service" > "$SECRETS_DIR/aigw/upstream-path"
 else
   echo "bridge" > "$SECRETS_DIR/aigw/upstream-path"
 fi
-[ "$code" = 200 ] || fail "sy-small answered $code through Polaris"
-code=$(ask auto); [ "$code" = 200 ] || fail "model auto answered $code through Polaris and Switchyard"
+[ "$code" = 200 ] || { diag; fail "sy-small answered $code through Polaris"; }
+code=$(ask_until_200 auto 12); [ "$code" = 200 ] || { diag; fail "model auto answered $code through Polaris and Switchyard"; }
 ok "auto answered 200 through Polaris + Switchyard; upstream path: $(cat "$SECRETS_DIR/aigw/upstream-path")"
 unset TOK
 
