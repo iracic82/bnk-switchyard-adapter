@@ -5,7 +5,7 @@
 #   LAB_ROOT      the base lab checkout (its install/lib helpers are sourced, not changed)
 #   SY_ROOT       this repository
 #   SECRETS_DIR   where virtual keys are written (default /root/.bnk)
-#   SY_IMAGE_REPO, SY_IMAGE_TAG   public images (default docker.io/iracic82, 0.2.0)
+#   SY_IMAGE_REPO, SY_IMAGE_TAG   public images (default docker.io/iracic82, 0.2.3)
 #
 # What it builds:
 #   aigw-models   two mock model pools, an InferencePool and an F5EPP each
@@ -16,7 +16,7 @@
 #                 to the route's profile as its model router
 set -uo pipefail
 LAB_ROOT=${LAB_ROOT:-/root/lab}; SY_ROOT=${SY_ROOT:-/root/switchyard}; SECRETS_DIR=${SECRETS_DIR:-/root/.bnk}
-IMG=${SY_IMAGE_REPO:-docker.io/iracic82}; TAG=${SY_IMAGE_TAG:-0.2.0}
+IMG=${SY_IMAGE_REPO:-docker.io/iracic82}; TAG=${SY_IMAGE_TAG:-0.2.3}
 export KUBECONFIG=${KUBECONFIG:-$LAB_ROOT/clab/kubeconfig}
 # shellcheck disable=SC1091
 source "$LAB_ROOT/install/lib/common.sh"
