@@ -35,14 +35,18 @@ checkout "$BASE_REPO" "$BASE_COMMIT" "$LAB_ROOT"
 checkout "$SY_REPO" "${SY_REF:-main}" "$SY_ROOT"
 unset GH_READ_TOKEN
 
+# absolute paths, and the result asserted: a baked image may carry /root/lab in any state (the base
+# track's setup learned this too)
+[ -f "$LAB_ROOT/install/00-host-prep.sh" ] || { ls -la "$LAB_ROOT" "$LAB_ROOT/install"; git -C "$LAB_ROOT" status --short | head; fail "$LAB_ROOT has no install/00-host-prep.sh after checkout"; }
 export SECRETS_DIR LICENSE_FILE=license.jwt KUBECONFIG="$LAB_ROOT/clab/kubeconfig" LAB_PUBLIC=1
 cd "$LAB_ROOT"
-step "host";             bash install/00-host-prep.sh
-step "registry mirrors"; bash install/05-registry-mirrors.sh
-step "fabric + kind";    bash install/10-fabric.sh
-step "cluster";          bash install/20-cluster.sh
-step "BNK";              bash install/30-bnk.sh
-step "BNK on the fabric"; bash install/35-bnk-network.sh
+I="$LAB_ROOT/install"
+step "host";             bash "$I/00-host-prep.sh"
+step "registry mirrors"; bash "$I/05-registry-mirrors.sh"
+step "fabric + kind";    bash "$I/10-fabric.sh"
+step "cluster";          bash "$I/20-cluster.sh"
+step "BNK";              bash "$I/30-bnk.sh"
+step "BNK on the fabric"; bash "$I/35-bnk-network.sh"
 shred -u "$SECRETS_DIR/cne_pull_64.json" "$SECRETS_DIR/license.jwt" 2>/dev/null || true
 unset FAR_PULL_B64 BNK_LICENSE_JWT
 
