@@ -3,7 +3,8 @@ slug: two-decisions
 id: dpo8ay6qa0qc
 type: challenge
 title: Two decisions per request
-teaser: Switchyard picks the model. The F5 Endpoint Picker picks the replica. Watch both happen on every request.
+teaser: Switchyard picks the model. The F5 Endpoint Picker picks the replica. Watch
+  both happen on every request.
 notes:
 - type: text
   contents: |-
@@ -16,15 +17,18 @@ notes:
 
     The model servers are mocks with vLLM-style metrics, so the lab needs no GPUs.
 tabs:
-- title: Terminal
+- id: ghzooumlox1o
+  title: Terminal
   type: terminal
   hostname: lab
-- title: Switchyard live view
+- id: wtomcyysrnwj
+  title: Switchyard live view
   type: service
   hostname: lab
   path: /live
   port: 8090
-- title: AI Gateway console
+- id: pdnz2o11cwwz
+  title: AI Gateway console
   type: service
   hostname: lab
   port: 3000

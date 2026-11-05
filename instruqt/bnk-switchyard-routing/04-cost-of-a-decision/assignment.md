@@ -3,7 +3,8 @@ slug: cost-of-a-decision
 id: ilynvf4ctmbx
 type: challenge
 title: The cost of a decision
-teaser: Run one agent workload three ways (small only, large only, Switchyard) and compare task success and cost.
+teaser: Run one agent workload three ways (small only, large only, Switchyard) and
+  compare task success and cost.
 notes:
 - type: text
   contents: |-
@@ -13,15 +14,18 @@ notes:
 
     This lesson measures all three through the AI gateway, on the same workload.
 tabs:
-- title: Terminal
+- id: nb7elqnxm4t2
+  title: Terminal
   type: terminal
   hostname: lab
-- title: Switchyard live view
+- id: wqljnemskesi
+  title: Switchyard live view
   type: service
   hostname: lab
   path: /live
   port: 8090
-- title: AI Gateway console
+- id: hzae9lbotvtz
+  title: AI Gateway console
   type: service
   hostname: lab
   port: 3000

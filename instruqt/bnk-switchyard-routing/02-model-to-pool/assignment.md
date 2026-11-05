@@ -3,7 +3,8 @@ slug: model-to-pool
 id: mzmzxrxe7w7c
 type: challenge
 title: From model name to GPU pod
-teaser: A Polaris model is a URL, not a pool. Follow one request from the AI gateway to the pod and see the picker spread load.
+teaser: A Polaris model is a URL, not a pool. Follow one request from the AI gateway
+  to the pod and see the picker spread load.
 notes:
 - type: text
   contents: |-
@@ -16,15 +17,18 @@ notes:
     providers point at a small "pool bridge" in the Switchyard router, which asks the pool's F5
     Endpoint Picker for a pod the same way BNK's data plane does, and forwards there.
 tabs:
-- title: Terminal
+- id: 8cusxr4ixiya
+  title: Terminal
   type: terminal
   hostname: lab
-- title: Switchyard live view
+- id: ckrd7azwd8fy
+  title: Switchyard live view
   type: service
   hostname: lab
   path: /live
   port: 8090
-- title: AI Gateway console
+- id: sin6zvodsrtu
+  title: AI Gateway console
   type: service
   hostname: lab
   port: 3000

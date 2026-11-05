@@ -3,7 +3,8 @@ slug: tenant-governance
 id: 1exvydozt3me
 type: challenge
 title: Who may use which model
-teaser: Virtual keys, model scopes and token budgets live in the AI gateway, before Switchyard sees the request.
+teaser: Virtual keys, model scopes and token budgets live in the AI gateway, before
+  Switchyard sees the request.
 notes:
 - type: text
   contents: |-
@@ -14,15 +15,18 @@ notes:
     The gateway checks all of that before it calls Switchyard, so a routing decision can never
     spend capacity the caller is not allowed.
 tabs:
-- title: Terminal
+- id: bsnwuvwhgsjk
+  title: Terminal
   type: terminal
   hostname: lab
-- title: Switchyard live view
+- id: cq6bdpyg35do
+  title: Switchyard live view
   type: service
   hostname: lab
   path: /live
   port: 8090
-- title: AI Gateway console
+- id: oem0hvpgb1ht
+  title: AI Gateway console
   type: service
   hostname: lab
   port: 3000
