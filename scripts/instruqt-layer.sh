@@ -47,7 +47,7 @@ for gw in switchyard-external inference-small inference-large; do
   kubectl -n f5-bnk wait --for=condition=Programmed "gateway/$gw" --timeout=300s || fail "gateway $gw not programmed"
 done
 for epp in small-pool-epp large-pool-epp; do
-  kubectl -n "$NS" wait --for=condition=Available "f5epp/$epp" --timeout=300s || echo "  warning: $epp not Available yet"
+  kubectl -n "$NS" wait --for=condition=Available "f5-epps/$epp" --timeout=300s || echo "  warning: $epp not Available yet"
 done
 
 step "Prometheus: scrape the adapter and the model servers"

@@ -63,7 +63,7 @@ for gw in inference-small inference-large; do
   kubectl -n $NS wait --for=condition=Programmed "gateway/$gw" --timeout=300s >/dev/null || fail "gateway $gw not Programmed"
 done
 for e in small-pool-epp large-pool-epp; do
-  kubectl -n "$POOL_NS" wait --for=condition=Available "f5epp/$e" --timeout=300s >/dev/null || warn "$e not Available yet"
+  kubectl -n "$POOL_NS" wait --for=condition=Available "f5-epps/$e" --timeout=300s >/dev/null || warn "$e not Available yet"
 done
 ok "pools on $SMALL_VIP and $LARGE_VIP, router Service $NS/switchyard-router"
 
