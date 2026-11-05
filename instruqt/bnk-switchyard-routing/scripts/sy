@@ -8,7 +8,7 @@
 #
 # The client sits outside the cluster, behind the fabric's router, like a real caller.
 set -uo pipefail
-VIP=${SY_VIP:-172.16.100.110}
+VIP=${SY_VIP:-172.16.100.19}
 KEYS=${SECRETS_DIR:-/root/.bnk}/aigw
 WHO=${SY_KEY:-eng}
 key() { cat "$KEYS/switchyard-$1-key.key"; }
@@ -20,7 +20,7 @@ post() { # model prompt stream
 case "${1:-}" in
   ask)
     shift; [ $# -ge 2 ] && { m=$1; shift; } || m=auto
-    post "$m" "$*" false 2> >(grep -iE '^(HTTP|x-switchyard|x-selected-model|x-served-by)' >&2) | jq -r '.model + ": " + (.choices[0].message.content // "" | .[0:160]) // .'
+    post "$m" "$*" false 2> >(grep -iE '^(HTTP|x-switchyard|x-selected-model|x-served-by|x-pool-pick|x-pool-endpoint)' >&2) | jq -r '.model + ": " + (.choices[0].message.content // "" | .[0:160]) // .'
     ;;
   stream)
     shift; [ $# -ge 2 ] && { m=$1; shift; } || m=auto
@@ -28,7 +28,7 @@ case "${1:-}" in
     ;;
   burst)
     n=$2; shift 2; [ $# -ge 2 ] && { m=$1; shift; } || m=auto
-    for _ in $(seq 1 "$n"); do (post "$m" "$*" false 2>&1 >/dev/null | grep -i '^x-served-by' &); done
+    for _ in $(seq 1 "$n"); do (post "$m" "$*" false 2>&1 >/dev/null | grep -iE '^(x-served-by|x-pool-endpoint)' &); done
     wait; sleep 1
     ;;
   key) key "${2:-eng}" ;;

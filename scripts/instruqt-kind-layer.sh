@@ -5,25 +5,29 @@
 #   LAB_ROOT      the base lab checkout (its install/lib helpers are sourced, not changed)
 #   SY_ROOT       this repository
 #   SECRETS_DIR   where virtual keys are written (default /root/.bnk)
-#   SY_IMAGE_REPO, SY_IMAGE_TAG   public images (default docker.io/iracic82, 0.2.4)
+#   SY_IMAGE_REPO, SY_IMAGE_TAG   public images (default docker.io/iracic82, 0.3.1)
 #
 # What it builds:
 #   aigw-models   two mock model pools, an InferencePool and an F5EPP each
-#   f5-bnk        internal Gateways inference-small (.111) and inference-large (.112), and the
-#                 Switchyard router (HTTP 8080 for the live view, ext_proc 50051)
-#   Polaris       tenant "switchyard": models sy-small and sy-large, an engineering key, a
-#                 budget-limited pilot key, a route on 172.16.100.110, and Switchyard attached
-#                 to the route's profile as its model router
+#   f5-bnk        internal Gateways inference-small (.26) and inference-large (.27), and the
+#                 Switchyard router (HTTP 8080 for the live view, ext_proc 50051, pool bridge 8000)
+#   Polaris       tenant "switchyard": models sy-small and sy-large on the pool bridge, an
+#                 engineering key, a budget-limited pilot key, a route on 172.16.100.19, and
+#                 Switchyard attached to the route's profile as its model router
+#
+# Polaris providers are URLs, so a model cannot name an InferencePool. The models point at the
+# router's pool bridge (/pools/<pool>/v1), which asks the pool's F5 EPP for a pod the way TMM does
+# and forwards there. BNK's VIP range on this lab is 172.16.100.10-29.
 set -uo pipefail
 LAB_ROOT=${LAB_ROOT:-/root/lab}; SY_ROOT=${SY_ROOT:-/root/switchyard}; SECRETS_DIR=${SECRETS_DIR:-/root/.bnk}
-IMG=${SY_IMAGE_REPO:-docker.io/iracic82}; TAG=${SY_IMAGE_TAG:-0.2.4}
+IMG=${SY_IMAGE_REPO:-docker.io/iracic82}; TAG=${SY_IMAGE_TAG:-0.3.1}
 export KUBECONFIG=${KUBECONFIG:-$LAB_ROOT/clab/kubeconfig}
 # shellcheck disable=SC1091
 source "$LAB_ROOT/install/lib/common.sh"
 # shellcheck disable=SC1091
 source "$LAB_ROOT/install/lib/expose.sh"
 NS=f5-bnk
-T=switchyard; ROUTE_VIP=172.16.100.110; SMALL_VIP=172.16.100.111; LARGE_VIP=172.16.100.112
+T=switchyard; ROUTE_VIP=172.16.100.19; SMALL_VIP=172.16.100.26; LARGE_VIP=172.16.100.27
 
 step "Switchyard: preconditions"
 POOL_NS=$(kubectl get cneinstance -A -o jsonpath='{.items[0].spec.eppNamespaces[0]}')
@@ -39,6 +43,7 @@ ok "pools go to $POOL_NS (EPP-enabled), the router to $NS"
 render() {
   kubectl kustomize "$SY_ROOT/deploy/k8s/base" | python3 "$SY_ROOT/scripts/render_lab.py" \
     --pool-ns "$POOL_NS" --bnk-ns "$NS" --image-repo "$IMG" --tag "$TAG" \
+    --small-vip "$SMALL_VIP" --large-vip "$LARGE_VIP" --gateway-infra f5-bnkgateway --part-of switchyard-lab \
     --adapter-config "$SY_ROOT/deploy/instruqt/adapter.toml" --kinds "$1"
 }
 apply_retry() {
@@ -62,7 +67,19 @@ for e in small-pool-epp large-pool-epp; do
 done
 ok "pools on $SMALL_VIP and $LARGE_VIP, router Service $NS/switchyard-router"
 
-step "Switchyard: Polaris management API"
+step "Switchyard: Polaris (AI gateway) Reconciled, then its management API"
+# as the base lab's 40-ai.sh does, which this track does not run
+r=""
+for _ in $(seq 1 "$(tmo 90 18)"); do
+  r=$(kubectl -n $NS get aigateways.k8s.f5.com -o jsonpath='{.items[0].status.conditions[?(@.type=="Reconciled")].status}' 2>/dev/null || true)
+  [ "$r" = True ] && break; sleep 20
+done
+[ "$r" = True ] || fail "AIGateway not Reconciled: kubectl -n $NS get aigateways.k8s.f5.com -o yaml"
+kubectl -n $NS wait --for=condition=Ready pod/f5-aigateway-clickhouse-0 --timeout="$(tmo 600s 180s)" >/dev/null || warn "ClickHouse not Ready"
+# the controller checks ClickHouse once at start and may have lost that race: one restart after ClickHouse is up
+kubectl -n $NS rollout restart deploy/f5-cne-controller >/dev/null 2>&1 || true
+kubectl -n $NS rollout status deploy/f5-cne-controller --timeout=300s >/dev/null 2>&1 || true
+ok "AIGateway Reconciled"
 expose_service polaris $NS f5-aigateway-console 3000
 LAB_PUBLIC=0 expose_service aigw-api $NS f5-cne-controller-api 18443
 API=http://127.0.0.1:18443
@@ -80,9 +97,10 @@ j "$API/api/v1/tenants" | jq -e --arg n "$T" '(.data // .items)[]? | select(.nam
 kubectl -n $NS wait --for=condition=Ready "aitenants.inference.k8s.f5.com/$T" --timeout=180s >/dev/null || warn "tenant $T not Ready"
 pk_ref() { j "$TA/provider-keys" | jq -r --arg n "$1" '(.data // .items)[]? | select(.name==$n) | .ref' | head -1; }
 declare -A REF=()
-# Two providers per pool: through the pool's Gateway (TMM consults the F5EPP), and straight to
-# the Service. The models start on the Gateway path; a check below falls back if it fails.
-for spec in "small-epp|http://$SMALL_VIP:8000/v1" "large-epp|http://$LARGE_VIP:8000/v1" \
+# Two providers per pool: the router's pool bridge (it asks the pool's F5 EPP for the pod), and
+# straight to the Service. The models start on the bridge; a check below falls back if it fails.
+BRIDGE=http://switchyard-router.$NS.svc.cluster.local:8000/pools
+for spec in "small-bridge|$BRIDGE/small/v1" "large-bridge|$BRIDGE/large/v1" \
             "small-svc|http://small-model.$POOL_NS.svc.cluster.local:8000/v1" "large-svc|http://large-model.$POOL_NS.svc.cluster.local:8000/v1"; do
   IFS='|' read -r n url <<<"$spec"; ref=$(pk_ref "$T-$n")
   if [ -z "$ref" ]; then
@@ -94,7 +112,7 @@ for spec in "small-epp|http://$SMALL_VIP:8000/v1" "large-epp|http://$LARGE_VIP:8
   REF[$n]=$ref
 done
 has_model() { j "$TA/models" | jq -e --arg n "$1" '(.data // .items)[]? | select(.name==$n)' >/dev/null 2>&1; }
-for spec in "sy-small|small-epp|Qwen/Qwen3-0.6B|100000|400000" "sy-large|large-epp|Qwen/Qwen3-32B|2000000|8000000"; do
+for spec in "sy-small|small-bridge|Qwen/Qwen3-0.6B|100000|400000" "sy-large|large-bridge|Qwen/Qwen3-32B|2000000|8000000"; do
   IFS='|' read -r name prov up in out <<<"$spec"
   if ! has_model "$name"; then
     jq -n --arg n "$name" --arg p "${REF[$prov]}" --arg u "$up" '{name:$n,deployments:[{providerRef:$p,upstream:$u,dialects:["openai"]}]}' \
@@ -113,7 +131,8 @@ ok "models sy-small and sy-large"
 step "Switchyard: keys (engineering, and a pilot with a token budget)"
 mkdir -p "$SECRETS_DIR/aigw"; chmod 700 "$SECRETS_DIR/aigw"
 SCOPE='["sy-small","sy-large"]'
-PKEYS=$(j "$TA/models" | jq -c '[(.data // .items)[]? | .deployments[]? | .provider] | unique')
+# a key is bound to the providers named when it is made: name all four, so the fallback keeps it valid
+PKEYS=$(printf '%s\n' "${REF[@]}" | jq -Rsc 'split("\n") | map(select(length>0))')
 j "$TA/governance/orgs" | jq -e --arg i "$T-org" '(.data // .items)[]? | select(.id==$i)' >/dev/null 2>&1 \
   || jq -n --arg i "$T-org" --argjson s "$SCOPE" '{id:$i,name:$i,displayName:"Switchyard demo",modelScope:$s}' | j "$TA/governance/orgs" --data-binary @- >/dev/null
 team_id() { j "$TA/governance/teams" | jq -r --arg n "$T-apps" --arg o "$T-org" '(.data // .items)[]? | select(.name==$n and .orgId==$o) | .id' | head -1; }
@@ -158,7 +177,7 @@ ask() { docker exec client curl -s -m 60 -o /dev/null -w '%{http_code}' "http://
           -H "Authorization: Bearer $ENG" -H 'Content-Type: application/json' -d "{\"model\":\"$1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"; }
 code=$(ask sy-small)
 if [ "$code" != 200 ]; then
-  warn "sy-small through the pool Gateway answered $code; pointing the models at the Services (no EPP on this path)"
+  warn "sy-small through the pool bridge answered $code; pointing the models at the Services (no EPP on this path)"
   for spec in "sy-small|small-svc|Qwen/Qwen3-0.6B|100000|400000" "sy-large|large-svc|Qwen/Qwen3-32B|2000000|8000000"; do
     IFS='|' read -r name prov up in out <<<"$spec"
     kubectl -n $NS patch aimodels.inference.k8s.f5.com "$name" --type merge -p "$(jq -n --arg p "${REF[$prov]##*/}" --arg u "$up" --argjson i "$in" --argjson o "$out" \
@@ -167,7 +186,7 @@ if [ "$code" != 200 ]; then
   sleep 10; code=$(ask sy-small)
   echo "service" > "$SECRETS_DIR/aigw/upstream-path"
 else
-  echo "epp" > "$SECRETS_DIR/aigw/upstream-path"
+  echo "bridge" > "$SECRETS_DIR/aigw/upstream-path"
 fi
 [ "$code" = 200 ] || fail "sy-small answered $code through Polaris"
 code=$(ask auto); [ "$code" = 200 ] || fail "model auto answered $code through Polaris and Switchyard"
