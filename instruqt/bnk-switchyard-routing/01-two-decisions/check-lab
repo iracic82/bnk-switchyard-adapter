@@ -1,29 +1,16 @@
 #!/usr/bin/env bash
-# The adapter routed 'auto' requests to both models through the external BNK Gateway.
 set -uo pipefail
-
-# Sum of a metric's samples whose labels include every given label="value" pair.
-metric_sum() {
-  local name=$1; shift
-  kubectl get --raw /api/v1/namespaces/switchyard/services/switchyard-adapter:8080/proxy/metrics 2>/dev/null \
-    | python3 -c '
-import sys
-name, want = sys.argv[1], sys.argv[2:]
-total = 0.0
-for line in sys.stdin:
-    if line.startswith(name + "{") and all(w in line for w in want):
-        total += float(line.rsplit(" ", 1)[1])
-print(int(total))' "$name" "$@"
-}
-
-if ! kubectl -n switchyard get deploy switchyard-adapter >/dev/null 2>&1; then
-  fail-message "The Switchyard adapter is not deployed. Setup may still be finishing: wait a minute and check again."
-  exit 1
-fi
-for model in small large; do
-  if [[ "$(metric_sum sy_adapter_requests_total 'route="auto"' "model=\"$model\"" 'status="ok"')" -lt 1 ]]; then
-    fail-message "No successful 'auto' request has gone to the $model model yet. Run the walkthrough and the hard request again."
+# router log lines since the lab started, as JSON fields
+fields() { kubectl -n f5-bnk logs deploy/switchyard-router --since=4h 2>/dev/null | grep -F "\"$1\"" | jq -c '.fields' 2>/dev/null; }
+routed=$(fields "ext_proc routed")
+for m in small large; do
+  if ! grep -q "\"selected_model\":\"$m\"" <<<"$routed"; then
+    fail-message "Switchyard has not sent an 'auto' request to the $m model yet. Send the easy and the hard request again (the judge is wrong one time in ten)."
     exit 1
   fi
 done
+if ! fields "pool bridge forwarded" | grep -q '"pick":"epp"'; then
+  fail-message "No request has reached a pod chosen by the F5 Endpoint Picker yet. Send a request with 'sy ask' and check again."
+  exit 1
+fi
 exit 0

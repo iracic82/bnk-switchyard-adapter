@@ -3,28 +3,25 @@ slug: cost-of-a-decision
 id: ilynvf4ctmbx
 type: challenge
 title: The cost of a decision
-teaser: Run one agent workload three ways (small only, large only, Switchyard) and
-  compare task success, cost and time to first token.
+teaser: Run one agent workload three ways (small only, large only, Switchyard) and compare task success and cost.
 notes:
 - type: text
   contents: |-
-    Model routing is a trade. The small model is cheap and fast and fails hard steps. The
-    large model succeeds and is slow and expensive. Switchyard spends a little on every
-    decision to get most of the success for much less. This challenge measures that trade,
-    with the numbers labelled for what they are.
+    Pin every agent step to the large model and tasks succeed, at the large model's price. Pin them
+    to the small model and they are cheap, and the hard steps fail. Switchyard sits between the two.
+    It also costs something: a judge call before every step.
+
+    This lesson measures all three through the AI gateway, on the same workload.
 tabs:
-- id: mnyioagchxqk
-  title: Terminal
+- title: Terminal
   type: terminal
   hostname: lab
-- id: fbo4saitf3cp
-  title: Switchyard live view
+- title: Switchyard live view
   type: service
   hostname: lab
   path: /live
   port: 8090
-- id: lgaclron9kwp
-  title: AI Gateway console
+- title: AI Gateway console
   type: service
   hostname: lab
   port: 3000
@@ -33,41 +30,33 @@ timelimit: 1800
 enhanced_loading: null
 ---
 
-The workload is 30 synthetic agent episodes of 3 to 6 steps. About 30% of steps are hard.
-An episode succeeds only if every step succeeds. All three runs go through BNK, so in the
-Switchyard run the F5 Endpoint Picker chooses the replica for every request.
+The workload is 30 agent tasks of three to six steps. Most steps are easy; some are hard, and a
+task succeeds only if every step does. The mock model servers decide whether a step succeeded:
+the large model solves 90% of hard steps, the small one 30%. Prices are the ones set on the
+gateway's models: the small model at $0.10 and $0.40 per million input and output tokens, the
+large one at $2 and $8.
 
-The cost numbers come from the adapter's own counters, so open a port to its metrics first:
-
-```bash,run
-kubectl -n switchyard port-forward svc/switchyard-adapter 19480:8080 >/dev/null 2>&1 &
-```
-
-Run the benchmark (about three minutes):
+Every request goes through the full chain: virtual key, gateway, Switchyard for `auto`, pool
+bridge, endpoint picker, pod. It takes two to three minutes:
 
 ```bash,run
-cd $SY_ROOT && python3 bench/run_bench.py --url http://172.16.201.110 --bnk-url http://172.16.201.110 \
-  --metrics-url http://127.0.0.1:19480 --scenarios fixed-small,fixed-large,switchyard-bnk \
-  --episodes 30 --concurrency 8 | xargs cat
+python3 $SY_ROOT/bench/polaris_bench.py --episodes 30 --json /root/bench.json
 ```
 
-Read the first table:
+Read the table:
 
-- **Task success.** Small-only fails most episodes because one hard step sinks the whole
-  task. Large-only succeeds most often.
-- **Cost per successful task.** This is the number that matters. Switchyard should be well
-  below large-only.
-- **TTFT.** Large-only queues everything on the four large-model slots. Switchyard sends
-  the easy steps elsewhere, so its median time to first token drops.
+- **task success**: how many tasks finished with every step right.
+- **served small/large**: where the steps went. For `auto` this is Switchyard's mix.
+- **EPP picks**: requests whose pod the F5 Endpoint Picker chose (all of them, normally).
+- **cost USD** comes from the token usage in each response. **+judge** is the judge call
+  Switchyard makes for every `auto` step, estimated from its prompt size (about 1,150 tokens on
+  the small model). It does not show in the response.
+- **USD/success**: total cost divided by successful tasks, the number that matters.
 
-Then the routing detail. *Selection cost* is what the judge calls cost. It is not small:
-the classifier prompt is over a thousand tokens. *Hard steps on large* shows how many hard
-steps the classifier caught; the misses are why Switchyard's success rate sits below
-large-only. In a real deployment `base_threshold` is the knob for that trade.
+Usually `auto` succeeds almost as often as `sy-large` and costs well under half as much per
+successful task. Where it falls short, it is the judge's mistakes: hard steps sent to the small
+model. A better judge, or a higher threshold in the router's config, trades cost for success.
 
-Be clear about what these numbers are. The model servers are mocks: their latencies,
-success rates per tier and the token prices are configured, and the judge is a keyword
-heuristic with a 10% error rate. The comparison between strategies is meaningful. The
-absolute values are not GPU measurements.
+Every number here is simulated. On real GPUs the shape holds; the values will not.
 
-Click **Check** when the report has been written.
+Click **Check** when the run has finished.

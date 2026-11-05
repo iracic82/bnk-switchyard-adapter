@@ -3,30 +3,28 @@ slug: two-decisions
 id: dpo8ay6qa0qc
 type: challenge
 title: Two decisions per request
-teaser: Switchyard picks the model. BNK picks the GPU replica. Watch both happen on
-  every request.
+teaser: Switchyard picks the model. The F5 Endpoint Picker picks the replica. Watch both happen on every request.
 notes:
 - type: text
   contents: |-
-    Every request an agent sends needs two answers. Which model should do this work? And
-    which copy of that model, on which GPU, should take it right now?
+    Every request an agent sends needs two answers. Which model should do this work? And which copy
+    of that model, on which GPU, should take it right now?
 
-    In this lab NVIDIA Switchyard answers the first one, inside a small adapter that sits
-    behind a BNK Gateway. BNK answers the second, with the F5 Endpoint Picker in front of
-    each model's pool.
+    In this lab a client calls BIG-IP Next for Kubernetes' AI gateway with a virtual key and
+    `model: auto`. The gateway asks NVIDIA Switchyard which model to use. Then the request goes to
+    that model's pool, where the F5 Endpoint Picker chooses the replica.
+
+    The model servers are mocks with vLLM-style metrics, so the lab needs no GPUs.
 tabs:
-- id: fucdi02xfagk
-  title: Terminal
+- title: Terminal
   type: terminal
   hostname: lab
-- id: rp2zhkwvc6uy
-  title: Switchyard live view
+- title: Switchyard live view
   type: service
   hostname: lab
   path: /live
   port: 8090
-- id: zrmnytxjhhkw
-  title: AI Gateway console
+- title: AI Gateway console
   type: service
   hostname: lab
   port: 3000
@@ -35,44 +33,44 @@ timelimit: 1200
 enhanced_loading: null
 ---
 
-The adapter is behind BNK's external Gateway at `172.16.201.110`. Clients send OpenAI
-Chat Completions requests. Instead of naming a model, they send `model: auto` and let
-Switchyard choose.
+The AI gateway's route for this lab is `172.16.100.19`. The `sy` helper sends requests to it
+from the `client` container, which sits outside the cluster behind the fabric's router, like a
+real caller. It uses the engineering team's virtual key.
 
-Run the walkthrough:
-
-```bash,run
-ADAPTER_URL=http://172.16.201.110 $SY_ROOT/scripts/demo.sh
-```
-
-Look at steps 1 and 2. The same coding agent sent an easy step and a hard step:
-
-- `Switchyard chose small` / `large` is the model decision. The algorithm is
-  `llm_task_classifier`: before answering, it asked a judge model (the small model, through
-  its own BNK pool) whether the small model can solve this.
-- `decided in ... ms` is the cost of that decision, the judge call.
-- `BNK pool ... -> endpoint ...` is the second decision. The pod name is the replica the F5
-  Endpoint Picker chose.
-
-Send one hard request yourself and read the headers:
+Send an easy agent step, with `model: auto`:
 
 ```bash,run
-curl -s -D - -o /dev/null http://172.16.201.110/v1/chat/completions \
-  -H 'Authorization: Bearer sk-demo-eng-agents' -H 'content-type: application/json' \
-  -d '{"model":"auto","messages":[{"role":"user","content":"Find the root cause of this deadlock between the queue and the lock service."}]}' \
-  | grep -iE 'x-switchyard|x-served-by'
+sy ask "Write a one-line commit message for a typo fix in the README."
 ```
 
-Then a streaming one. The answer arrives as server-sent events, as with any OpenAI client:
+Then a hard one:
 
 ```bash,run
-curl -sN http://172.16.201.110/v1/chat/completions \
-  -H 'Authorization: Bearer sk-demo-eng-agents' -H 'content-type: application/json' \
-  -d '{"model":"auto","stream":true,"messages":[{"role":"user","content":"Write a commit message for a typo fix."}]}' | head -5
+sy ask "Find the root cause of this distributed deadlock between the queue consumer and the lock service."
 ```
 
-Open the **Switchyard Dashboard** tab. The top row is the model decision (requests per
-model, decision latency, judge calls). The second row is the inference path through BNK.
-The bottom row is the load each pod reports; with the mock model servers it is simulated.
+Each answer shows the response headers and the model that answered:
 
-Click **Check** when you have sent a few requests.
+- The `model` in the answer (`sy-small` or `sy-large`) is **the first decision**. Switchyard's
+  task classifier asked a judge model (the small one) whether the small model can solve this
+  step, and the gateway sent the request to the model it picked.
+- `x-served-by` and `x-pool-endpoint` are **the second decision**: the pod the F5 Endpoint
+  Picker chose inside that model's pool. `x-pool-pick: epp` says the picker made the choice.
+
+The mock judge looks for words like "distributed" or "root cause" and is wrong one time in ten
+on purpose, so a hard step now and then lands on the small model. Real judges make mistakes
+too. Lesson 4 measures what that costs.
+
+Both decisions are in the router's log. Each request leaves two lines: `ext_proc routed` (the
+model, and how long the decision took) and `pool bridge forwarded` (the pod, and how long the
+picker took):
+
+```bash,run
+kubectl -n f5-bnk logs deploy/switchyard-router --since=5m \
+  | grep -E 'ext_proc routed|pool bridge forwarded' | tail -4 | jq -c '.fields'
+```
+
+Open the **Switchyard live view** tab and send a few more requests. Each row is one decision:
+the prompt, the model chosen, and how long the judge took.
+
+Click **Check** once both models have answered an `auto` request.

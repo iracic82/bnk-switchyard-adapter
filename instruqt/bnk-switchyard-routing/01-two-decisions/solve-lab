@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
-for prompt in "Write a commit message for a typo fix." "Debug this race condition between two workers."; do
-  curl -s -o /dev/null -m 30 http://172.16.201.110/v1/chat/completions \
-    -H 'Authorization: Bearer sk-demo-eng-agents' -H 'content-type: application/json' \
-    -d "{\"model\":\"auto\",\"messages\":[{\"role\":\"user\",\"content\":\"$prompt\"}]}"
+for _ in 1 2 3; do
+  sy ask "Write a one-line commit message for a typo fix in the README." >/dev/null 2>&1
+  sy ask "Find the root cause of this distributed deadlock between the queue consumer and the lock service." >/dev/null 2>&1
 done
+exit 0

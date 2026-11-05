@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
 set -uo pipefail
-kubectl -n switchyard port-forward svc/switchyard-adapter 19480:8080 >/dev/null 2>&1 &
-pf=$!
-sleep 2
-cd "${SY_ROOT:-/root/lab/switchyard}" && python3 bench/run_bench.py --url http://172.16.201.110 \
-  --bnk-url http://172.16.201.110 --metrics-url http://127.0.0.1:19480 \
-  --scenarios fixed-small,fixed-large,switchyard-bnk --episodes 30 --concurrency 8
-kill $pf
+python3 "${SY_ROOT:-/root/switchyard}/bench/polaris_bench.py" --episodes 10 --json /root/bench.json >/dev/null 2>&1
+exit 0

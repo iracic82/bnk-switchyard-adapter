@@ -8,19 +8,17 @@ description: |-
   "format this as JSON" step queues on your most expensive GPUs. Pin a small model and the
   hard steps fail.
 
-  This lab runs NVIDIA NeMo Switchyard next to the GPUs, on a live BIG-IP Next for Kubernetes
-  2.4 cluster. Switchyard's task classifier decides which model each request needs. The
-  request then goes through BNK to that model's InferencePool, where the F5 Endpoint Picker
-  chooses the replica by queue depth and cache state. A tenant policy sits outside both, so a
-  routing mistake can never spend frontier GPU time for a tenant that isn't allowed it.
+  This lab runs NVIDIA NeMo Switchyard on a live BIG-IP Next for Kubernetes 2.4 cluster, as
+  the model router of BNK's AI gateway. A caller sends `model: auto` with a virtual key. The
+  gateway checks the key's scope and budget, Switchyard's task classifier picks the model, and
+  the F5 Endpoint Picker picks the replica inside that model's InferencePool.
 
-  1. **Two decisions.** Watch Switchyard choose the model and BNK choose the replica.
-  2. **From model name to GPU pod.** Follow one request through the Gateways, routes, pools
-     and endpoint pickers, and see the picker spread load.
-  3. **Tenant governance.** A support bot that may only use the small model, and what happens
-     when it asks for more.
-  4. **The cost of a decision.** Run the same agent workload three ways and compare cost,
-     task success and time to first token.
+  1. **Two decisions.** Watch Switchyard choose the model and the picker choose the pod.
+  2. **From model name to GPU pod.** Follow one request from the gateway to the pod, and see
+     the picker spread load.
+  3. **Who may use which model.** Virtual keys, model scopes and a token budget that runs out.
+  4. **The cost of a decision.** Run the same agent workload three ways and compare task
+     success and cost per successful task.
 
   The model servers are mocks with vLLM-style metrics, so the lab needs no GPUs. Every
   number the lab shows says whether it is simulated.
@@ -41,5 +39,5 @@ lab_config:
   feedback_tab_enabled: false
   loadingMessages: true
   hideStopButton: false
-checksum: "15718357257279805320"
+checksum: "7258817777993775178"
 enhanced_loading: false

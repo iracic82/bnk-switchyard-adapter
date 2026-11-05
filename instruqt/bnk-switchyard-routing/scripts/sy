@@ -3,7 +3,7 @@
 #
 #   sy ask [model] "prompt"          model defaults to auto (Switchyard decides)
 #   sy stream [model] "prompt"       the same, streamed
-#   sy burst N [model] "prompt"      N requests in parallel, then which pod served them
+#   sy burst N [model] "prompt"      N requests in parallel: status, pod, pick, endpoint
 #   sy key [eng|pilot]               print a virtual key
 #
 # The client sits outside the cluster, behind the fabric's router, like a real caller.
@@ -28,8 +28,14 @@ case "${1:-}" in
     ;;
   burst)
     n=$2; shift 2; [ $# -ge 2 ] && { m=$1; shift; } || m=auto
-    for _ in $(seq 1 "$n"); do (post "$m" "$*" false 2>&1 >/dev/null | grep -iE '^(x-served-by|x-pool-endpoint)' &); done
-    wait; sleep 1
+    # one line per request: status, the pod that answered, and how the pool bridge chose it
+    for _ in $(seq 1 "$n"); do
+      post "$m" "$*" false 2>&1 >/dev/null | tr -d '\r' | awk '
+        tolower($1) ~ /^http/ {s=$2} tolower($1)=="x-served-by:" {p=$2}
+        tolower($1)=="x-pool-pick:" {k=$2} tolower($1)=="x-pool-endpoint:" {e=$2}
+        END {printf "%s  %-32s %-10s %s\n", s, p, k, e}' &
+    done
+    wait
     ;;
   key) key "${2:-eng}" ;;
   *) sed -n '2,10p' "$0"; exit 1 ;;

@@ -3,27 +3,26 @@ slug: tenant-governance
 id: 1exvydozt3me
 type: challenge
 title: Who may use which model
-teaser: The support bot may only use the small model. Switchyard never gets the chance
-  to pick anything else for it.
+teaser: Virtual keys, model scopes and token budgets live in the AI gateway, before Switchyard sees the request.
 notes:
 - type: text
   contents: |-
-    A routing algorithm makes mistakes. A tenant rule must not depend on it being right.
-    Here, authorization happens before Switchyard runs: the algorithm is only ever shown the
-    models the tenant may use.
+    Switchyard decides which model fits a request. It does not decide who may spend what. In this
+    lab that is the AI gateway's job: each caller has a virtual key, each key has a model scope,
+    and a key can carry a token budget.
+
+    The gateway checks all of that before it calls Switchyard, so a routing decision can never
+    spend capacity the caller is not allowed.
 tabs:
-- id: len4c03lhcnr
-  title: Terminal
+- title: Terminal
   type: terminal
   hostname: lab
-- id: 7vv9wlulnb2t
-  title: Switchyard live view
+- title: Switchyard live view
   type: service
   hostname: lab
   path: /live
   port: 8090
-- id: ekk1utydptd0
-  title: AI Gateway console
+- title: AI Gateway console
   type: service
   hostname: lab
   port: 3000
@@ -32,47 +31,41 @@ timelimit: 1500
 enhanced_loading: null
 ---
 
-Three tenants are configured. Each is identified by its API key; the adapter stores only
-the keys' SHA-256 digests.
+The lab has two keys in the tenant `switchyard`:
+
+- `eng`: the engineering team, models `sy-small` and `sy-large`, no budget.
+- `pilot`: a pilot project with the same models and a budget of 2,000 tokens an hour. The
+  budget's action is `block`.
+
+First, a model outside the key's scope. The gateway refuses it, and Switchyard never sees the
+request:
 
 ```bash,run
-kubectl -n switchyard get cm -o jsonpath='{.items[0].data.adapter\.toml}' | sed -n '/\[\[tenants\]\]/,/^limits/p' | grep -E '^id|allowed|limits'
+sy ask gpt-4o "hello"
 ```
 
-The support bot asks for the large model by name. It is refused:
+Now spend the pilot key's budget. Each hard request to the large model uses about 75 tokens,
+so a few dozen are enough. Watch the status column:
 
 ```bash,run
-curl -s http://172.16.201.110/v1/chat/completions -H 'Authorization: Bearer sk-demo-support-agents' \
-  -H 'content-type: application/json' -d '{"model":"large","messages":[{"role":"user","content":"hi"}]}'; echo
+for i in 1 2 3; do SY_KEY=pilot sy burst 15 sy-large "Design a rate limiter for 50,000 requests per second."; done
 ```
 
-It sends a hard task through `auto`. For the engineering tenant this would go to the large
-model. The support tenant may only use the small one, and its policy says `degrade`, so
-the request runs on the small model and the response says so:
+The first requests answer `200`. Once the budget is spent the gateway refuses the key. The
+gateway counts usage as requests finish, so a few may get through after the line is crossed.
+Run the loop again if every request still says `200`.
+
+The engineering key is not affected:
 
 ```bash,run
-curl -s -D - -o /dev/null http://172.16.201.110/v1/chat/completions -H 'Authorization: Bearer sk-demo-support-agents' \
-  -H 'content-type: application/json' \
-  -d '{"model":"auto","messages":[{"role":"user","content":"Design a migration plan for our ticket system."}]}' \
-  | grep -iE 'x-switchyard-(model|policy)'
+sy ask sy-small "Which HTTP status code means not found?"
 ```
 
-Identity comes from the key, never from a header the client can set:
+Open the **AI Gateway console** tab to see the tenant, its keys and their spend. The login is
+in a Kubernetes Secret:
 
 ```bash,run
-curl -s -w '  %{http_code}\n' http://172.16.201.110/v1/chat/completions -H 'x-tenant-id: eng-agents' \
-  -H 'content-type: application/json' -d '{"model":"large","messages":[{"role":"user","content":"hi"}]}'
+kubectl -n f5-bnk get secret f5-aigateway-admin -o json | jq -r '.data | map_values(@base64d) | "user: \(.username)  password: \(.password)"'
 ```
 
-Limits are per tenant too. The support bot may ask for at most 2,048 output tokens:
-
-```bash,run
-curl -s http://172.16.201.110/v1/chat/completions -H 'Authorization: Bearer sk-demo-support-agents' \
-  -H 'content-type: application/json' -d '{"model":"small","max_tokens":8000,"messages":[{"role":"user","content":"hi"}]}'; echo
-```
-
-Its estimated spend budget is $2 per hour, computed from configured token prices. That is
-spend control, not a GPU quota, and the lab says so on purpose. The dashboard's
-**Policy rejections** panel now shows the refusals by tenant and reason.
-
-Click **Check** when the support bot has been refused at least once and served at least once.
+Click **Check** once the pilot key is being refused.
