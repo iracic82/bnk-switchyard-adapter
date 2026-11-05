@@ -1,5 +1,6 @@
 slug: bnk-switchyard-routing
-title: "Right model, right GPU: NVIDIA Switchyard on F5 BIG-IP Next for Kubernetes"
+id: 4zytdpxgjwip
+title: 'Right model, right GPU: NVIDIA Switchyard on F5 BIG-IP Next for Kubernetes'
 teaser: NVIDIA Switchyard picks the model for each agent step. BNK's endpoint picker
   picks the GPU replica. Tenant policy decides who may use which model.
 description: |-
@@ -25,10 +26,10 @@ description: |-
   number the lab shows says whether it is simulated.
 icon: ""
 tags:
-- ai
+- nvidia
 - kubernetes
 - f5
-- nvidia
+- ai
 owner: f5
 developers:
 - iracic@infoblox.com
@@ -40,4 +41,5 @@ lab_config:
   feedback_tab_enabled: false
   loadingMessages: true
   hideStopButton: false
+checksum: "15718357257279805320"
 enhanced_loading: false

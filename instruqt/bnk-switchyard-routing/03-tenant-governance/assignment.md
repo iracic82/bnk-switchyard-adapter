@@ -1,9 +1,10 @@
 ---
 slug: tenant-governance
+id: 1exvydozt3me
 type: challenge
 title: Who may use which model
-teaser: The support bot may only use the small model. Switchyard never gets the chance to
-  pick anything else for it.
+teaser: The support bot may only use the small model. Switchyard never gets the chance
+  to pick anything else for it.
 notes:
 - type: text
   contents: |-
@@ -11,16 +12,24 @@ notes:
     Here, authorization happens before Switchyard runs: the algorithm is only ever shown the
     models the tenant may use.
 tabs:
-- title: Terminal
+- id: len4c03lhcnr
+  title: Terminal
   type: terminal
-  hostname: bnk
-- title: Switchyard Dashboard
+  hostname: lab
+- id: 7vv9wlulnb2t
+  title: Switchyard live view
   type: service
-  hostname: bnk
-  path: /d/switchyard-bnk
+  hostname: lab
+  path: /live
+  port: 8090
+- id: ekk1utydptd0
+  title: AI Gateway console
+  type: service
+  hostname: lab
   port: 3000
 difficulty: intermediate
 timelimit: 1500
+enhanced_loading: null
 ---
 
 Three tenants are configured. Each is identified by its API key; the adapter stores only

@@ -1,8 +1,10 @@
 ---
 slug: two-decisions
+id: dpo8ay6qa0qc
 type: challenge
 title: Two decisions per request
-teaser: Switchyard picks the model. BNK picks the GPU replica. Watch both happen on every request.
+teaser: Switchyard picks the model. BNK picks the GPU replica. Watch both happen on
+  every request.
 notes:
 - type: text
   contents: |-
@@ -13,16 +15,24 @@ notes:
     behind a BNK Gateway. BNK answers the second, with the F5 Endpoint Picker in front of
     each model's pool.
 tabs:
-- title: Terminal
+- id: fucdi02xfagk
+  title: Terminal
   type: terminal
-  hostname: bnk
-- title: Switchyard Dashboard
+  hostname: lab
+- id: rp2zhkwvc6uy
+  title: Switchyard live view
   type: service
-  hostname: bnk
-  path: /d/switchyard-bnk
+  hostname: lab
+  path: /live
+  port: 8090
+- id: zrmnytxjhhkw
+  title: AI Gateway console
+  type: service
+  hostname: lab
   port: 3000
 difficulty: basic
 timelimit: 1200
+enhanced_loading: null
 ---
 
 The adapter is behind BNK's external Gateway at `172.16.201.110`. Clients send OpenAI

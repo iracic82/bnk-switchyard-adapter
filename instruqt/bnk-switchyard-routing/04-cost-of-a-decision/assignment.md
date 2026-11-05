@@ -1,9 +1,10 @@
 ---
 slug: cost-of-a-decision
+id: ilynvf4ctmbx
 type: challenge
 title: The cost of a decision
-teaser: Run one agent workload three ways (small only, large only, Switchyard) and compare
-  task success, cost and time to first token.
+teaser: Run one agent workload three ways (small only, large only, Switchyard) and
+  compare task success, cost and time to first token.
 notes:
 - type: text
   contents: |-
@@ -12,16 +13,24 @@ notes:
     decision to get most of the success for much less. This challenge measures that trade,
     with the numbers labelled for what they are.
 tabs:
-- title: Terminal
+- id: mnyioagchxqk
+  title: Terminal
   type: terminal
-  hostname: bnk
-- title: Switchyard Dashboard
+  hostname: lab
+- id: fbo4saitf3cp
+  title: Switchyard live view
   type: service
-  hostname: bnk
-  path: /d/switchyard-bnk
+  hostname: lab
+  path: /live
+  port: 8090
+- id: lgaclron9kwp
+  title: AI Gateway console
+  type: service
+  hostname: lab
   port: 3000
 difficulty: intermediate
 timelimit: 1800
+enhanced_loading: null
 ---
 
 The workload is 30 synthetic agent episodes of 3 to 6 steps. About 30% of steps are hard.

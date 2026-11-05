@@ -1,5 +1,6 @@
 ---
 slug: model-to-pool
+id: mzmzxrxe7w7c
 type: challenge
 title: From model name to GPU pod
 teaser: A model name selects nothing in Gateway API. Follow one request from the adapter's
@@ -11,16 +12,24 @@ notes:
     whichever HTTPRoute matches the request. This challenge follows that chain link by link,
     then shows the F5 Endpoint Picker spreading load inside one pool.
 tabs:
-- title: Terminal
+- id: v3tab7shghdv
+  title: Terminal
   type: terminal
-  hostname: bnk
-- title: Switchyard Dashboard
+  hostname: lab
+- id: v9gcy3ip5jed
+  title: Switchyard live view
   type: service
-  hostname: bnk
-  path: /d/switchyard-bnk
+  hostname: lab
+  path: /live
+  port: 8090
+- id: olb5ldm6xyie
+  title: AI Gateway console
+  type: service
+  hostname: lab
   port: 3000
 difficulty: intermediate
 timelimit: 1500
+enhanced_loading: null
 ---
 
 The adapter's registry binds each logical model to one URL. Look at the binding for
