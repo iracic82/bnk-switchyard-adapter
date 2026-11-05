@@ -22,9 +22,10 @@ use envoy_types::pb::envoy::service::ext_proc::v3::external_processor_server::{
 use envoy_types::pb::envoy::service::ext_proc::v3::processing_request::Request as Req;
 use envoy_types::pb::envoy::service::ext_proc::v3::processing_response::Response as Resp;
 use envoy_types::pb::envoy::service::ext_proc::v3::{
-    BodyMutation, BodyResponse, CommonResponse, HeaderMutation, HeadersResponse, ProcessingRequest,
-    ProcessingResponse, TrailersResponse, body_mutation,
+    BodyMutation, BodyResponse, CommonResponse, HeaderMutation, HeadersResponse, ImmediateResponse,
+    ProcessingRequest, ProcessingResponse, TrailersResponse, body_mutation,
 };
+use envoy_types::pb::envoy::r#type::v3::HttpStatus;
 use futures::Stream;
 use serde_json::Value;
 use switchyard_protocol::{ModelId, Request};
@@ -83,7 +84,7 @@ impl ExternalProcessor for ExtProc {
                             continue;
                         }
                         let decided = decide(&state, &tenant, &headers, std::mem::take(&mut body)).await;
-                        yield respond(Resp::RequestBody(decided));
+                        yield respond(decided);
                     }
                     Some(Req::ResponseHeaders(_)) => yield respond(Resp::ResponseHeaders(HeadersResponse::default())),
                     Some(Req::ResponseBody(_)) => yield respond(Resp::ResponseBody(BodyResponse::default())),
@@ -117,41 +118,76 @@ fn header(key: &str, value: &str) -> HeaderValueOption {
 
 /// Runs the route's algorithm and returns the body response for the gateway. Never fails
 /// the request: on routing errors it routes to the route's capable model.
+/// A request the gateway must refuse instead of forwarding.
+struct Refusal {
+    status: u16,
+    code: &'static str,
+    message: String,
+}
+
 async fn decide(
     state: &Arc<AppState>,
     tenant_id: &str,
     headers: &http::HeaderMap,
     raw: Vec<u8>,
-) -> BodyResponse {
+) -> Resp {
+    match decide_inner(state, tenant_id, headers, raw).await {
+        Ok(body) => Resp::RequestBody(body),
+        Err(refusal) => Resp::ImmediateResponse(immediate(refusal)),
+    }
+}
+
+fn immediate(refusal: Refusal) -> ImmediateResponse {
+    let body = serde_json::json!({"error": {"message": refusal.message, "type": "invalid_request_error", "code": refusal.code}});
+    ImmediateResponse {
+        status: Some(HttpStatus {
+            code: i32::from(refusal.status),
+        }),
+        headers: Some(HeaderMutation {
+            set_headers: vec![header("content-type", "application/json")],
+            ..Default::default()
+        }),
+        body: body.to_string().into_bytes(),
+        details: refusal.code.to_owned(),
+        ..Default::default()
+    }
+}
+
+async fn decide_inner(
+    state: &Arc<AppState>,
+    tenant_id: &str,
+    headers: &http::HeaderMap,
+    raw: Vec<u8>,
+) -> Result<BodyResponse, Refusal> {
     let Ok(Value::Object(mut map)) = serde_json::from_slice::<Value>(&raw) else {
-        return BodyResponse::default();
+        return Ok(BodyResponse::default());
     };
     let registry = &state.engine.registry;
     let Some(route_name) = map.get("model").and_then(Value::as_str).map(str::to_owned) else {
-        return BodyResponse::default();
+        return Ok(BodyResponse::default());
     };
     // A concrete model is labelled for the gateway's routes, not decided again.
     if let Some(model) = registry.known_model(&route_name) {
         let gateway_model = registry.gateway_model(&model).to_owned();
         map.insert("model".into(), Value::String(gateway_model.clone()));
         let Ok(body) = serde_json::to_vec(&Value::Object(map)) else {
-            return BodyResponse::default();
+            return Ok(BodyResponse::default());
         };
-        return mutation(
+        return Ok(mutation(
             vec![
                 header("x-selected-model", &gateway_model),
                 header("x-switchyard-model", model.as_str()),
                 header("x-switchyard-route", "direct"),
             ],
             body,
-        );
+        ));
     }
     // Anything that is neither a model nor a Switchyard route passes through unchanged.
     let Some(route) = registry.routes.get(&route_name).cloned() else {
-        return BodyResponse::default();
+        return Ok(BodyResponse::default());
     };
     let Some(tenant) = state.tenants.by_id(tenant_id) else {
-        return BodyResponse::default();
+        return Ok(BodyResponse::default());
     };
     let request_id = headers
         .get("x-request-id")
@@ -168,10 +204,27 @@ async fn decide(
         .map(|live| live.preview(&Value::Object(map.clone())))
         .unwrap_or_default();
 
+    // Tenant policy is not an error to route around: a refusal here is final.
+    let plan = match registry.plan(&route, &tenant.allowed_models, tenant.limits.tier_fallback) {
+        Ok(plan) => plan,
+        Err(e) => {
+            if let Some(live) = &state.live {
+                live.publish(LiveEvent {
+                    tenant: tenant.id.clone(),
+                    route: route_name.clone(),
+                    status: "refused".into(),
+                    reason: "tier_not_allowed".into(),
+                    ..Default::default()
+                });
+            }
+            return Err(Refusal {
+                status: 403,
+                code: "model_not_allowed",
+                message: e.to_string(),
+            });
+        }
+    };
     let decision = async {
-        let plan = registry
-            .plan(&route, &tenant.allowed_models, tenant.limits.tier_fallback)
-            .map_err(|e| e.to_string())?;
         let llm_request = decode_request(WireFormat::OpenAiChat, &Value::Object(map.clone()))
             .map_err(|e| e.to_string())?;
         let request = Request {
@@ -184,7 +237,7 @@ async fn decide(
             .decide(&plan, request, state.routing_timeout)
             .await
             .map_err(|e| e.to_string())?;
-        Ok::<_, String>((plan, decision))
+        Ok::<_, String>(decision)
     }
     .await;
 
@@ -195,7 +248,7 @@ async fn decide(
         f64,
         String,
     ) = match &decision {
-        Ok((_, d)) => (
+        Ok(d) => (
             d.outcome.selected_model_ids[0].clone(),
             d.algorithm.clone(),
             d.evidence
@@ -206,8 +259,8 @@ async fn decide(
             String::new(),
         ),
         Err(error) => {
-            tracing::warn!(%error, "ext_proc routing failed; using the route's capable model");
-            match registry.fail_open_model(&route) {
+            tracing::warn!(%error, "ext_proc routing failed; using the most capable permitted model");
+            match registry.fail_open_model(&route, &plan.answer_allowed) {
                 Some(model) => (
                     model,
                     route.algorithm.name().to_owned(),
@@ -215,7 +268,13 @@ async fn decide(
                     0.0,
                     "fail_open".into(),
                 ),
-                None => return BodyResponse::default(),
+                None => {
+                    return Err(Refusal {
+                        status: 503,
+                        code: "routing_unavailable",
+                        message: "routing failed and no permitted fallback model exists".into(),
+                    });
+                }
             }
         }
     };
@@ -223,7 +282,7 @@ async fn decide(
     let gateway_model = registry.gateway_model(&model).to_owned();
     map.insert("model".into(), Value::String(gateway_model.clone()));
     let Ok(body) = serde_json::to_vec(&Value::Object(map)) else {
-        return BodyResponse::default();
+        return Ok(BodyResponse::default());
     };
     tracing::info!(selected_model = %model, gateway_model = %gateway_model, decision_ms, "ext_proc routed");
     tenant.record_spend(selection_cost);
@@ -256,7 +315,7 @@ async fn decide(
     if !reason.is_empty() {
         set_headers.push(header("x-switchyard-policy", &reason));
     }
-    mutation(set_headers, body)
+    Ok(mutation(set_headers, body))
 }
 
 /// Headers and body for the gateway, with the route cache cleared so it re-matches routes.

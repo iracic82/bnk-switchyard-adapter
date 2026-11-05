@@ -4,6 +4,12 @@
 #   inference-small      172.16.201.111:8000  adapter -> small-pool      (routes from inference ns)
 #   inference-large      172.16.201.112:8000  adapter -> large-pool      (routes from inference ns)
 #
+# SECURITY: the internal Gateways carry no client authentication. Anyone who can reach
+# 172.16.201.111/.112 reaches the model pools directly and bypasses tenant policy (and the AI
+# gateway, if one fronts the adapter). Put the internal VIPs on a network clients cannot route
+# to, or allow only the adapter's source address (TMM SNATs this traffic; use the observed SNAT
+# address) with a firewall policy. Verify from a client: these VIPs must not answer.
+#
 # Loop prevention: the external Gateway admits routes only from the switchyard namespace,
 # and the internal Gateways only from the inference namespace. No route attaches to both.
 # The adapter also refuses requests that carry its own hop header (508).

@@ -243,13 +243,19 @@ impl Registry {
             .map(|(id, _)| id.clone())
     }
 
-    /// Where an ext_proc decision falls back to when routing fails: the route's most
-    /// capable answer model (the last category's first model).
-    pub fn fail_open_model(&self, route: &Route) -> Option<ModelId> {
+    /// Where an ext_proc decision falls back to when routing fails: the most capable model the
+    /// plan permits (last category first). Never a model outside `allowed`.
+    pub fn fail_open_model(
+        &self,
+        route: &Route,
+        allowed: &std::collections::HashSet<ModelId>,
+    ) -> Option<ModelId> {
         route
             .categories
-            .last()
-            .and_then(|(_, m)| m.first())
+            .iter()
+            .rev()
+            .flat_map(|(_, models)| models)
+            .find(|m| allowed.contains(*m))
             .cloned()
     }
 

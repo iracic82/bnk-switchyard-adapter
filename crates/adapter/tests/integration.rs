@@ -290,6 +290,15 @@ mod ext_proc {
     };
 
     async fn start(small: SocketAddr, large: SocketAddr) -> u16 {
+        start_as(small, large, None).await
+    }
+
+    /// `restrict`: the ext_proc tenant may use only the small model, with this tier policy.
+    async fn start_as(
+        small: SocketAddr,
+        large: SocketAddr,
+        restrict: Option<bnk_switchyard_adapter::config::TierFallback>,
+    ) -> u16 {
         let port = std::net::TcpListener::bind("127.0.0.1:0")
             .unwrap()
             .local_addr()
@@ -299,6 +308,10 @@ mod ext_proc {
         let mut text_config = config(small, large, &extra);
         for model in text_config.models.values_mut() {
             model.gateway_model = Some(format!("gw-{}", model.provider_model));
+        }
+        if let Some(policy) = restrict {
+            text_config.tenants[0].allowed_models = vec!["small".into()];
+            text_config.tenants[0].limits.tier_fallback = policy;
         }
         let _ = adapter(text_config).await;
         for _ in 0..50 {
@@ -454,5 +467,50 @@ mod ext_proc {
         };
         let common = body.response.as_ref().expect("a mutation");
         assert_eq!(header(common, "x-switchyard-model"), Some(&b"large"[..]));
+    }
+
+    #[tokio::test]
+    async fn tenant_without_the_capable_tier_is_refused_not_failed_open() {
+        let small = upstream("prov-small", Behaviour::Ok).await;
+        let large = upstream("prov-large", Behaviour::Ok).await;
+        let port = start_as(
+            small.addr,
+            large.addr,
+            Some(bnk_switchyard_adapter::config::TierFallback::Reject),
+        )
+        .await;
+        let responses = exchange(port, hello("auto")).await;
+        let Resp::ImmediateResponse(refusal) = &responses[1] else {
+            panic!(
+                "expected the gateway to be told to refuse, got {:?}",
+                responses[1]
+            )
+        };
+        assert_eq!(refusal.status.as_ref().map(|s| s.code), Some(403));
+        assert!(String::from_utf8_lossy(&refusal.body).contains("model_not_allowed"));
+        assert!(small.seen.lock().bodies.is_empty() && large.seen.lock().bodies.is_empty());
+    }
+
+    #[tokio::test]
+    async fn judge_failure_never_falls_back_outside_the_tenants_models() {
+        // The judge (small) fails; the tenant may use only small, degrading the capable tier.
+        let small = upstream("prov-small", Behaviour::Status503).await;
+        let large = upstream("prov-large", Behaviour::Ok).await;
+        let port = start_as(
+            small.addr,
+            large.addr,
+            Some(bnk_switchyard_adapter::config::TierFallback::Degrade),
+        )
+        .await;
+        let responses = exchange(port, hello("auto")).await;
+        let Resp::RequestBody(body) = &responses[1] else {
+            panic!("expected a body response")
+        };
+        let common = body.response.as_ref().expect("a mutation");
+        assert_eq!(header(common, "x-switchyard-model"), Some(&b"small"[..]));
+        assert_eq!(
+            header(common, "x-selected-model"),
+            Some(&b"gw-prov-small"[..])
+        );
     }
 }

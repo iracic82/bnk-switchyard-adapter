@@ -227,6 +227,10 @@ route that needs a tier the tenant lacks gets 403 `tier_not_allowed`, or with
 `tier_fallback = "degrade"` it runs on the permitted models and says
 `x-switchyard-policy: degraded`.
 
+The internal pool Gateways do no authentication of their own. Keep their VIPs unreachable from
+clients (separate network, or a firewall policy that admits only the adapter's source address);
+otherwise a client can call a pool directly and skip all of the above.
+
 Limits per tenant: requests per minute, concurrent requests, a cap on `max_tokens`, and an
 estimated spend budget per rolling hour from configured token prices. None of these is a GPU
 quota or a token quota enforced at the model server. They are kept in process, so with N

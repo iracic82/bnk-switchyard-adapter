@@ -4,6 +4,11 @@
 
 These are what I would fix before anyone runs this for real traffic, in order.
 
+0. **The internal pool Gateways are open.** They have no client authentication, so a client that can
+   reach their VIPs skips the adapter, tenant policy and the AI gateway. On the lab cluster a pool
+   VIP behind the router's NAT answered from outside. Keep internal VIPs on a network clients cannot
+   reach, or restrict them to the adapter's source address with a BNK firewall policy, and test from
+   a client that they do not answer.
 1. **Limits are per replica.** Rate, concurrency and spend limits live in process. With more
    than one adapter replica a tenant gets a multiple of its limit. Either run one replica
    behind BNK (the adapter is light: about 60 MB image, routing overhead is the judge call),
