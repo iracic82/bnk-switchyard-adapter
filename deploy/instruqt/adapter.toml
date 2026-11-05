@@ -10,8 +10,11 @@ max_body_bytes = 1048576
 request_timeout_secs = 300
 routing_timeout_secs = 10
 live_view = true
-# The lab shows prompts on the live view. Set to 0 anywhere real prompts flow.
+# The lab shows prompts on the live view, which only cluster operators reach (port-forward; a
+# NetworkPolicy keeps everyone else off port 8080). Set to 0 anywhere real prompts flow.
 live_prompt_preview_chars = 100
+# The adapter only decides for the AI gateway (ext_proc): no client may call it directly.
+chat_api = false
 
 [identity]
 mode = "api_key"
@@ -20,8 +23,6 @@ mode = "api_key"
 # virtual key; this list is the backstop for which models Switchyard may choose.
 [[tenants]]
 id = "polaris"
-# not used for login: ext_proc requests carry no adapter key (sk-lab-direct-not-for-clients)
-api_key_sha256 = ["4e56ea66b1fea4bc87e54a9d6ba519f9ef2ed4e53abfd482578b91236b301bae"]
 allowed_models = ["small", "large"]
 
 [ext_proc]

@@ -52,6 +52,9 @@ pub struct ServerConfig {
     pub live_view: bool,
     /// Characters of the last user message shown in the live view. 0 shows none.
     pub live_prompt_preview_chars: usize,
+    /// Serve `POST /v1/chat/completions`. Turn off when the adapter only decides for a gateway
+    /// (ext_proc): then it answers no client and needs no API keys.
+    pub chat_api: bool,
 }
 
 impl Default for ServerConfig {
@@ -65,6 +68,7 @@ impl Default for ServerConfig {
             shutdown_drain_secs: 5,
             live_view: false,
             live_prompt_preview_chars: 0,
+            chat_api: true,
         }
     }
 }
@@ -338,7 +342,11 @@ impl Config {
                 ext.tenant
             );
         }
-        if self.identity.mode == IdentityMode::ApiKey {
+        ensure!(
+            self.server.chat_api || self.ext_proc.is_some(),
+            "server.chat_api = false needs [ext_proc], or the adapter serves nothing"
+        );
+        if self.identity.mode == IdentityMode::ApiKey && self.server.chat_api {
             ensure!(
                 self.tenants.iter().any(|t| !t.api_key_sha256.is_empty()),
                 "identity.mode = \"api_key\" needs at least one tenant API key digest"
@@ -438,6 +446,23 @@ classifier = { base_threshold = 0.5 }
         assert_eq!(
             lab.ext_proc.as_ref().map(|e| e.listen.as_str()),
             Some("0.0.0.0:50051")
+        );
+    }
+
+    #[test]
+    fn ext_proc_only_needs_no_api_keys() {
+        let text = SAMPLE
+            .replace(
+                "api_key_sha256 = [\"2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b\"]\n",
+                "",
+            )
+            .replace("[identity]", "[server]\nchat_api = false\n\n[identity]")
+            + "\n[ext_proc]\nlisten = \"127.0.0.1:0\"\ntenant = \"acme\"\n";
+        Config::parse(&text).unwrap();
+        let no_ext = text.split("\n[ext_proc]").next().unwrap().to_string();
+        assert!(
+            Config::parse(&no_ext).is_err(),
+            "chat_api = false without ext_proc serves nothing"
         );
     }
 

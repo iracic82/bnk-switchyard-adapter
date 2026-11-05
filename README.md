@@ -240,7 +240,9 @@ budget.
 ## API surface
 
 `POST /v1/chat/completions` (OpenAI Chat Completions, buffered and SSE), `GET /healthz`,
-`GET /readyz` (not ready while draining on shutdown), `GET /metrics`.
+`GET /readyz` (not ready while draining on shutdown), `GET /metrics`, `GET /live`. With
+`server.chat_api = false` (for an ext_proc-only router behind an AI gateway) the chat endpoint is not served
+and no API keys are needed; keep port 8080 behind a NetworkPolicy, because `/live` can show prompt previews.
 
 Request parameters pass through unchanged: Switchyard's translation keeps the original body
 for same-format replay, and only `model` is rewritten to the provider model. The integration

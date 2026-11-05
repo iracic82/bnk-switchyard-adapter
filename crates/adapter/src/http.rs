@@ -41,9 +41,13 @@ pub struct AppState {
     pub live: Option<crate::live::Live>,
 }
 
-pub fn router(state: Arc<AppState>, max_body_bytes: usize) -> Router {
-    Router::new()
-        .route("/v1/chat/completions", post(chat_completions))
+pub fn router(state: Arc<AppState>, max_body_bytes: usize, chat_api: bool) -> Router {
+    let router = if chat_api {
+        Router::new().route("/v1/chat/completions", post(chat_completions))
+    } else {
+        Router::new()
+    };
+    router
         .route("/healthz", get(|| async { "ok" }))
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))

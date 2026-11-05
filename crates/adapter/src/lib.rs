@@ -53,7 +53,11 @@ pub async fn serve(
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
     let state = build_state(config)?;
-    let app = http::router(Arc::clone(&state), config.server.max_body_bytes);
+    let app = http::router(
+        Arc::clone(&state),
+        config.server.max_body_bytes,
+        config.server.chat_api,
+    );
     state.ready.store(true, Ordering::Relaxed);
     tracing::info!(addr = %listener.local_addr()?, "bnk-switchyard-adapter listening");
     let drain = Duration::from_secs(config.server.shutdown_drain_secs);
