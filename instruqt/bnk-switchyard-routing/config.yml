@@ -21,8 +21,8 @@ virtualmachines:
     # The base lab, pinned. Bump deliberately; never follow its main branch.
     BASE_REPO: github.com/iracic82/bnk-ai-factory-clab.git
     BASE_COMMIT: 300c06ef84fd943ed327717d3dd0182fe793d851
-    # EDIT before publishing: where this repository lives (GH_READ_TOKEN must read it).
-    SY_REPO: github.com/REPLACE-ME/bnk-switchyard-adapter.git
+    # This repository (private; GH_READ_TOKEN must be able to read it).
+    SY_REPO: github.com/iracic82/bnk-switchyard-adapter.git
     SY_REF: main
     SY_IMAGE_REPO: docker.io/iracic82
     SY_IMAGE_TAG: 0.2.0
