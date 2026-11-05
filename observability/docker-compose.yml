@@ -1,0 +1,20 @@
+# Prometheus on :19090 and Grafana on :13000 for the local stack. Host networking so they
+# reach the adapter and mocks on 127.0.0.1.  docker compose -f observability/docker-compose.yml up -d
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    network_mode: host
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--web.listen-address=127.0.0.1:19090"]
+    volumes:
+    - ./prometheus.local.yml:/etc/prometheus/prometheus.yml:ro
+  grafana:
+    image: grafana/grafana:12.1.1
+    network_mode: host
+    environment:
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SERVER_HTTP_PORT: "13000"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+    - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    - ./grafana/dashboards:/var/lib/grafana/dashboards:ro

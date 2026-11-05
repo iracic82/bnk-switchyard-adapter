@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Both F5EPPs exist, and every small-model pod has served at least one request.
+set -uo pipefail
+for epp in small-pool-epp large-pool-epp; do
+  if ! kubectl -n sim get f5epp "$epp" >/dev/null 2>&1; then
+    fail-message "F5EPP $epp is missing in namespace sim."
+    exit 1
+  fi
+done
+pods=$(kubectl -n sim get pods -l app=small-model -o jsonpath='{.items[*].metadata.name}')
+[[ -n "$pods" ]] || { fail-message "No small-model pods found in sim."; exit 1; }
+for pod in $pods; do
+  served=$(kubectl get --raw "/api/v1/namespaces/sim/pods/${pod}:8000/proxy/metrics" 2>/dev/null \
+    | awk '/^mock_requests_total/ {print int($NF)}')
+  if [[ "${served:-0}" -lt 1 ]]; then
+    fail-message "Pod $pod has not served a request yet. Run the 40-request loop again."
+    exit 1
+  fi
+done
+exit 0

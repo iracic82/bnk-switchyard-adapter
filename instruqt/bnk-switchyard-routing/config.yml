@@ -1,0 +1,36 @@
+version: "3"
+# One VM is the whole lab: containerlab runs an FRR fabric, a router (r5), a client container and
+# a kind cluster with BIG-IP Next for Kubernetes 2.4.2 on it. The base install is
+# bnk-ai-factory-clab's, run from a pinned commit; this track adds Switchyard on top.
+#
+# Sizing is BNK's: about 22.5 vCPU of requests, TMM 4.6 vCPU plus 2 Gi of hugepages, all on one
+# kernel. The custom image carries the tooling and registry mirrors (stock images have a 10 GB disk).
+virtualmachines:
+- name: lab
+  image: f5/aibnk
+  machine_type: n2-standard-32
+  shell: /bin/bash
+  ports:
+  - 3000   # BNK AI gateway console (Polaris)
+  - 8090   # Switchyard live view
+  environment:
+    KUBECONFIG: /root/lab/clab/kubeconfig
+    LAB_ROOT: /root/lab
+    SY_ROOT: /root/switchyard
+    SECRETS_DIR: /root/.bnk
+    # The base lab, pinned. Bump deliberately; never follow its main branch.
+    BASE_REPO: github.com/iracic82/bnk-ai-factory-clab.git
+    BASE_COMMIT: 300c06ef84fd943ed327717d3dd0182fe793d851
+    # EDIT before publishing: where this repository lives (GH_READ_TOKEN must read it).
+    SY_REPO: github.com/REPLACE-ME/bnk-switchyard-adapter.git
+    SY_REF: main
+    SY_IMAGE_REPO: docker.io/iracic82
+    SY_IMAGE_TAG: 0.2.0
+secrets:
+# Team secrets on the f5 team, write only.
+- name: FAR_PULL_B64
+  key: FAR_PULL_B64
+- name: BNK_LICENSE_JWT
+  key: BNK_LICENSE_JWT
+- name: GH_READ_TOKEN
+  key: GH_READ_TOKEN

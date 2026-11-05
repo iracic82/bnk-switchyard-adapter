@@ -1,0 +1,59 @@
+# Adapter for the one-VM Instruqt lab. BNK's AI gateway (Polaris) is the front door: it owns
+# client identity, virtual keys, budgets and the upstream hop. The adapter sits in the profile's
+# model-router slot (ext_proc, port 50051) and only decides which model answers.
+#
+# __POOL_NS__ is replaced at install time with the EPP-enabled namespace.
+
+[server]
+listen = "0.0.0.0:8080"
+max_body_bytes = 1048576
+request_timeout_secs = 300
+routing_timeout_secs = 10
+live_view = true
+# The lab shows prompts on the live view. Set to 0 anywhere real prompts flow.
+live_prompt_preview_chars = 100
+
+[identity]
+mode = "api_key"
+
+# The tenant Polaris traffic runs as. Polaris has already authenticated the caller with a
+# virtual key; this list is the backstop for which models Switchyard may choose.
+[[tenants]]
+id = "polaris"
+# not used for login: ext_proc requests carry no adapter key (sk-lab-direct-not-for-clients)
+api_key_sha256 = ["4e56ea66b1fea4bc87e54a9d6ba519f9ef2ed4e53abfd482578b91236b301bae"]
+allowed_models = ["small", "large"]
+
+[ext_proc]
+listen = "0.0.0.0:50051"
+tenant = "polaris"
+
+[models.small]
+provider_model = "Qwen/Qwen3-0.6B"
+# Polaris AIModel the gateway routes to; its provider is the small pool's internal Gateway.
+gateway_model = "sy-small"
+# Used by the adapter only for the classifier's judge call.
+base_url = "http://small-model.__POOL_NS__.svc.cluster.local:8000/v1"
+inference_pool = "__POOL_NS__/small-pool"
+timeout_secs = 30
+cost = { input_per_1m_usd = 0.10, output_per_1m_usd = 0.40 }
+
+[models.large]
+provider_model = "Qwen/Qwen3-32B"
+gateway_model = "sy-large"
+base_url = "http://large-model.__POOL_NS__.svc.cluster.local:8000/v1"
+inference_pool = "__POOL_NS__/large-pool"
+timeout_secs = 60
+cost = { input_per_1m_usd = 2.00, output_per_1m_usd = 8.00 }
+
+[routes.auto]
+algorithm = "task_classifier"
+efficient = ["small"]
+capable = ["large"]
+judge = "small"
+classifier = { base_threshold = 0.6, response_format_type = "json_schema", judge_deadline_ms = 3000 }
+
+[routes.weighted]
+algorithm = "random"
+models = ["small", "large"]
+weights = [0.7, 0.3]

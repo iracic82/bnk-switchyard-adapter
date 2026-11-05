@@ -1,0 +1,75 @@
+# The Switchyard adapter. It does not call the Kubernetes API, so its ServiceAccount has no
+# RBAC and no mounted token.
+#
+# Rate, concurrency and spend limits are kept in process, so they apply per replica. With
+# 2 replicas a tenant can reach up to 2x its configured limit. Keep replicas at 1 for exact
+# limits, or divide the limits by the replica count.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: switchyard-adapter
+  namespace: switchyard
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: switchyard-adapter
+  namespace: switchyard
+  labels: {app: switchyard-adapter}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: switchyard-adapter}
+  template:
+    metadata:
+      labels: {app: switchyard-adapter}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: switchyard-adapter
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: adapter
+        image: bnk-switchyard-adapter:dev
+        imagePullPolicy: IfNotPresent
+        args: ["/etc/switchyard-adapter/adapter.toml"]
+        ports:
+        - {name: http, containerPort: 8080}
+        env:
+        - {name: RUST_LOG, value: "info"}
+        # Uncomment to export traces over OTLP/HTTP:
+        # - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otel-collector.observability:4318"}
+        readinessProbe:
+          httpGet: {path: /readyz, port: http}
+          periodSeconds: 2
+        livenessProbe:
+          httpGet: {path: /healthz, port: http}
+          periodSeconds: 10
+        resources:
+          requests: {cpu: 250m, memory: 64Mi}
+          limits: {memory: 256Mi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: ["ALL"]}
+        volumeMounts:
+        - {name: config, mountPath: /etc/switchyard-adapter, readOnly: true}
+      volumes:
+      - name: config
+        configMap: {name: switchyard-adapter-config}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: switchyard-adapter
+  namespace: switchyard
+spec:
+  selector: {app: switchyard-adapter}
+  ports:
+  - {name: http, port: 8080, targetPort: http}

@@ -1,0 +1,46 @@
+# External route: only the chat completions path reaches the adapter. /metrics, /healthz and
+# /readyz stay inside the cluster.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: switchyard-external
+  namespace: switchyard
+spec:
+  parentRefs:
+  - {name: switchyard-external, namespace: f5-bnk, sectionName: http}
+  rules:
+  - matches:
+    - path: {type: Exact, value: /v1/chat/completions}
+    backendRefs:
+    - {name: switchyard-adapter, port: 8080}
+---
+# Internal routes: one Gateway, one route, one InferencePool. This is the shape F5 documents
+# ("two HTTPRoutes on two different Gateways can each route independently to their own
+# InferencePool").
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: small-pool
+  namespace: inference
+spec:
+  parentRefs:
+  - {name: inference-small, namespace: f5-bnk, sectionName: http}
+  rules:
+  - matches:
+    - path: {type: PathPrefix, value: /v1}
+    backendRefs:
+    - {group: inference.networking.k8s.io, kind: InferencePool, name: small-pool, port: 8000}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: large-pool
+  namespace: inference
+spec:
+  parentRefs:
+  - {name: inference-large, namespace: f5-bnk, sectionName: http}
+  rules:
+  - matches:
+    - path: {type: PathPrefix, value: /v1}
+    backendRefs:
+    - {group: inference.networking.k8s.io, kind: InferencePool, name: large-pool, port: 8000}

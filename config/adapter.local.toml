@@ -1,0 +1,74 @@
+# Local demo: two mock model servers stand in for the two BNK internal Gateways.
+# On a cluster, use config/adapter.bnk.toml, where base_url points at BNK VIPs.
+#
+# Demo API keys (local only, never use in production):
+#   eng-agents      sk-demo-eng-agents       may use small and large, through any route
+#   support-agents  sk-demo-support-agents   may use small only; auto is degraded to small
+#   research        sk-demo-research         may use large only; direct model names only
+
+[server]
+listen = "127.0.0.1:9480"
+max_body_bytes = 1048576
+request_timeout_secs = 120
+routing_timeout_secs = 15
+live_view = true
+live_prompt_preview_chars = 100
+
+[identity]
+mode = "api_key"
+
+[[tenants]]
+id = "eng-agents"
+api_key_sha256 = ["5ec4d40a2cdd519909d6b3240ab0787b5b11ab9280d3f09cbcbf0bf1023ac3be"]
+allowed_models = ["small", "large"]
+limits = { requests_per_minute = 6000, max_concurrent = 64, max_tokens_per_request = 8192, cost_budget_usd_per_hour = 50.0 }
+
+[[tenants]]
+id = "support-agents"
+api_key_sha256 = ["91a0d0c413f3a9ba335414af32e1b47177972bd71e1c97c53a29ca10d9c5837c"]
+allowed_models = ["small"]
+limits = { requests_per_minute = 600, max_concurrent = 16, max_tokens_per_request = 2048, cost_budget_usd_per_hour = 2.0, tier_fallback = "degrade" }
+
+[[tenants]]
+id = "research"
+api_key_sha256 = ["556df7c4bcd0c781337b3dcad1ec8131cfeb417f6acf7ec293e190d6f55f0e13"]
+allowed_models = ["large"]
+allowed_routes = []
+limits = { requests_per_minute = 120, max_concurrent = 8 }
+
+# ext_proc mode: decide the model inside a gateway's request path (deploy/envoy/).
+# The gateway has already authenticated the caller, so one tenant's policy applies.
+[ext_proc]
+listen = "127.0.0.1:9450"
+tenant = "eng-agents"
+
+# Logical models. `provider_model` is what the inference server serves.
+# Prices are illustrative, per million tokens, and drive the cost estimate only.
+[models.small]
+provider_model = "mock-small"
+base_url = "http://127.0.0.1:9481/v1"
+inference_pool = "inference/small-pool"
+cost = { input_per_1m_usd = 0.10, output_per_1m_usd = 0.40 }
+
+[models.large]
+provider_model = "mock-large"
+base_url = "http://127.0.0.1:9482/v1"
+inference_pool = "inference/large-pool"
+cost = { input_per_1m_usd = 2.00, output_per_1m_usd = 8.00 }
+
+# Public routes. Clients send one of these names, or a logical model name, as `model`.
+[routes.auto]
+algorithm = "task_classifier"
+efficient = ["small"]
+capable = ["large"]
+judge = "small"
+classifier = { base_threshold = 0.6, response_format_type = "json_schema", judge_deadline_ms = 5000 }
+
+[routes.weighted]
+algorithm = "random"
+models = ["small", "large"]
+weights = [0.7, 0.3]
+
+[routes.passthrough]
+algorithm = "passthrough"
+models = ["large", "small"]

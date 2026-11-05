@@ -1,0 +1,58 @@
+# Benchmark config: same models and routes as adapter.local.toml, two equal tenants.
+# team-a sends most of the load; team-b is the light tenant used to measure fairness.
+#   team-a  sk-bench-team-a
+#   team-b  sk-bench-team-b
+
+[server]
+listen = "127.0.0.1:9480"
+max_body_bytes = 1048576
+request_timeout_secs = 300
+routing_timeout_secs = 15
+live_view = true
+live_prompt_preview_chars = 0
+
+[identity]
+mode = "api_key"
+
+[[tenants]]
+id = "team-a"
+api_key_sha256 = ["b9ccbfce42dca23968d4930d49a18232a05284df0ba3117dc1ec6a567af2a451"]
+allowed_models = ["small", "large"]
+limits = { max_concurrent = 48 }
+
+[[tenants]]
+id = "team-b"
+api_key_sha256 = ["31ecf2fb801dce9481e2536ec3aa0532b6633ad5ca19edfea9df61d26b6e2548"]
+allowed_models = ["small", "large"]
+limits = { max_concurrent = 48 }
+
+# Logical models. `provider_model` is what the inference server serves.
+# Prices are illustrative, per million tokens, and drive the cost estimate only.
+[models.small]
+provider_model = "mock-small"
+base_url = "http://127.0.0.1:9481/v1"
+inference_pool = "inference/small-pool"
+cost = { input_per_1m_usd = 0.10, output_per_1m_usd = 0.40 }
+
+[models.large]
+provider_model = "mock-large"
+base_url = "http://127.0.0.1:9482/v1"
+inference_pool = "inference/large-pool"
+cost = { input_per_1m_usd = 2.00, output_per_1m_usd = 8.00 }
+
+# Public routes. Clients send one of these names, or a logical model name, as `model`.
+[routes.auto]
+algorithm = "task_classifier"
+efficient = ["small"]
+capable = ["large"]
+judge = "small"
+classifier = { base_threshold = 0.6, response_format_type = "json_schema", judge_deadline_ms = 5000 }
+
+[routes.weighted]
+algorithm = "random"
+models = ["small", "large"]
+weights = [0.7, 0.3]
+
+[routes.passthrough]
+algorithm = "passthrough"
+models = ["large", "small"]

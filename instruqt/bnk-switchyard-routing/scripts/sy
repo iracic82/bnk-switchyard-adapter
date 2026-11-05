@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# sy: send a chat request from the lab's client container through BNK's AI gateway.
+#
+#   sy ask [model] "prompt"          model defaults to auto (Switchyard decides)
+#   sy stream [model] "prompt"       the same, streamed
+#   sy burst N [model] "prompt"      N requests in parallel, then which pod served them
+#   sy key [eng|pilot]               print a virtual key
+#
+# The client sits outside the cluster, behind the fabric's router, like a real caller.
+set -uo pipefail
+VIP=${SY_VIP:-172.16.100.110}
+KEYS=${SECRETS_DIR:-/root/.bnk}/aigw
+WHO=${SY_KEY:-eng}
+key() { cat "$KEYS/switchyard-$1-key.key"; }
+body() { jq -nc --arg m "$1" --arg p "$2" --argjson s "${3:-false}" '{model:$m,stream:$s,messages:[{role:"user",content:$p}]}'; }
+post() { # model prompt stream
+  docker exec -i client curl -s -m 120 "http://$VIP/v1/chat/completions" -D /dev/stderr \
+    -H "Authorization: Bearer $(key "$WHO")" -H 'Content-Type: application/json' -d "$(body "$1" "$2" "$3")"
+}
+case "${1:-}" in
+  ask)
+    shift; [ $# -ge 2 ] && { m=$1; shift; } || m=auto
+    post "$m" "$*" false 2> >(grep -iE '^(HTTP|x-switchyard|x-selected-model|x-served-by)' >&2) | jq -r '.model + ": " + (.choices[0].message.content // "" | .[0:160]) // .'
+    ;;
+  stream)
+    shift; [ $# -ge 2 ] && { m=$1; shift; } || m=auto
+    post "$m" "$*" true 2>/dev/null | sed -n 's/^data: //p' | head -20
+    ;;
+  burst)
+    n=$2; shift 2; [ $# -ge 2 ] && { m=$1; shift; } || m=auto
+    for _ in $(seq 1 "$n"); do (post "$m" "$*" false 2>&1 >/dev/null | grep -i '^x-served-by' &); done
+    wait; sleep 1
+    ;;
+  key) key "${2:-eng}" ;;
+  *) sed -n '2,10p' "$0"; exit 1 ;;
+esac

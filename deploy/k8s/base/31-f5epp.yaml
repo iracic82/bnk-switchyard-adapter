@@ -1,0 +1,51 @@
+# F5 Endpoint Pickers, one per pool. The BNK controller renders each EPP's Deployment,
+# Service (named after the CR), ConfigMap, ServiceAccount and RBAC.
+#
+# Prerequisites (README, "BNK prerequisites"):
+#   - CNEInstance.spec.eppNamespaces includes "inference"
+#   - the F5 registry pull secret exists in "inference"
+#
+# The mock model servers publish no KV-cache events, so the zmq-wire plugin is removed and
+# the EPP uses speculative prefix tracking. Keep zmq-wire with real vLLM
+# (deploy/k8s/models-real/).
+apiVersion: inference.k8s.f5.com/v1alpha1
+kind: F5EPP
+metadata:
+  name: small-pool-epp
+  namespace: inference
+spec:
+  poolRef:
+    name: small-pool
+  engine: vllm
+  server:
+    modelServerMetricsPort: 8000
+    secureServing: false
+    metricsEndpointAuth: false
+  tokenizer:
+    name: Qwen/Qwen3-0.6B
+  eppConfig:
+    config:
+      plugins:
+      - name: zmq-wire
+        parameters: {"$patch": "delete"}
+---
+apiVersion: inference.k8s.f5.com/v1alpha1
+kind: F5EPP
+metadata:
+  name: large-pool-epp
+  namespace: inference
+spec:
+  poolRef:
+    name: large-pool
+  engine: vllm
+  server:
+    modelServerMetricsPort: 8000
+    secureServing: false
+    metricsEndpointAuth: false
+  tokenizer:
+    name: Qwen/Qwen3-32B
+  eppConfig:
+    config:
+      plugins:
+      - name: zmq-wire
+        parameters: {"$patch": "delete"}

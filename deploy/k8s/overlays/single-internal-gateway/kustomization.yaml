@@ -1,0 +1,42 @@
+# NEEDS VALIDATION ON A BNK CLUSTER.
+#
+# One internal Gateway in front of both pools. The adapter adds `x-switchyard-pool: small|large`
+# and one HTTPRoute selects the InferencePool by header. Header matches are Gateway API core
+# and have worked on BNK with Service backends; with two InferencePool backends in one route
+# this has not been tested. If it fails, use the base (one Gateway per pool).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../base
+- internal-gateway.yaml
+patches:
+- target: {kind: Gateway, name: inference-small}
+  patch: |
+    $patch: delete
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata: {name: inference-small, namespace: f5-bnk}
+- target: {kind: Gateway, name: inference-large}
+  patch: |
+    $patch: delete
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata: {name: inference-large, namespace: f5-bnk}
+- target: {kind: HTTPRoute, name: small-pool}
+  patch: |
+    $patch: delete
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    metadata: {name: small-pool, namespace: inference}
+- target: {kind: HTTPRoute, name: large-pool}
+  patch: |
+    $patch: delete
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    metadata: {name: large-pool, namespace: inference}
+configMapGenerator:
+- name: switchyard-adapter-config
+  namespace: switchyard
+  behavior: replace
+  files:
+  - adapter.toml

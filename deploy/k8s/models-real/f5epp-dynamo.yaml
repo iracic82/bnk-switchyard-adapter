@@ -1,0 +1,15 @@
+# Optional: an F5EPP for an NVIDIA Dynamo backend instead of vLLM. Shape taken from a BNK 2.4
+# lab that ran Dynamo 1.5.1; the NATS URL and topics depend on your Dynamo install.
+# The Dynamo graph deployment itself is not included here: follow the Dynamo documentation,
+# then point the InferencePool selector at its decode worker pods.
+apiVersion: inference.k8s.f5.com/v1alpha1
+kind: F5EPP
+metadata:
+  name: large-pool-epp
+  namespace: inference
+spec:
+  poolRef: {name: large-pool}
+  engine: dynamo
+  natsURL: nats://dynamo-platform-nats.dynamo-system.svc.cluster.local:4222
+  server: {modelServerMetricsPort: 9090, secureServing: false, metricsEndpointAuth: false}
+  tokenizer: {name: Qwen/Qwen3-32B}

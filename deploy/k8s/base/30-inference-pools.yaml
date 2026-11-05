@@ -1,0 +1,34 @@
+# One InferencePool and one F5EPP per model. GAIE v1.4.0 InferencePool schema; F5EPP fields
+# as documented for BNK 2.4 and used on a BNK 2.4 lab cluster.
+#
+# The pool selector is what binds a model to its endpoints: small-pool selects only
+# small-model pods, so a request routed to small-pool can never land on a large-model pod.
+apiVersion: inference.networking.k8s.io/v1
+kind: InferencePool
+metadata:
+  name: small-pool
+  namespace: inference
+spec:
+  selector:
+    matchLabels: {app: small-model}
+  targetPorts:
+  - number: 8000
+  endpointPickerRef:
+    name: small-pool-epp
+    port: {number: 9002}
+    failureMode: FailOpen
+---
+apiVersion: inference.networking.k8s.io/v1
+kind: InferencePool
+metadata:
+  name: large-pool
+  namespace: inference
+spec:
+  selector:
+    matchLabels: {app: large-model}
+  targetPorts:
+  - number: 8000
+  endpointPickerRef:
+    name: large-pool-epp
+    port: {number: 9002}
+    failureMode: FailOpen

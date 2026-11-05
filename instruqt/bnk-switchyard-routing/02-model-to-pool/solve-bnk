@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -uo pipefail
+for _ in $(seq 1 40); do
+  curl -s -o /dev/null -m 20 http://172.16.201.110/v1/chat/completions \
+    -H 'Authorization: Bearer sk-demo-eng-agents' -H 'content-type: application/json' \
+    -d '{"model":"small","messages":[{"role":"user","content":"hi"}]}' &
+done
+wait

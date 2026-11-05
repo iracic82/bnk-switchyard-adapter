@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Sandboxes are destroyed after the track; the keys are removed anyway.
+set -uo pipefail
+shred -u /root/.bnk/aigw/* /root/.bnk/* 2>/dev/null; rm -rf /root/.bnk
+exit 0

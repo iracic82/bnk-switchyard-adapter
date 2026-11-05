@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# The support tenant was refused the large model and was served by the small one.
+set -uo pipefail
+metric_sum() {
+  local name=$1; shift
+  kubectl get --raw /api/v1/namespaces/switchyard/services/switchyard-adapter:8080/proxy/metrics 2>/dev/null \
+    | python3 -c '
+import sys
+name, want = sys.argv[1], sys.argv[2:]
+print(int(sum(float(l.rsplit(" ", 1)[1]) for l in sys.stdin if l.startswith(name + "{") and all(w in l for w in want))))' "$name" "$@"
+}
+if [[ "$(metric_sum sy_adapter_rejections_total 'tenant="support-agents"' 'reason="model_not_allowed"')" -lt 1 ]]; then
+  fail-message "The support tenant has not asked for the large model yet. Run the first request."
+  exit 1
+fi
+if [[ "$(metric_sum sy_adapter_requests_total 'tenant="support-agents"' 'model="small"' 'status="ok"')" -lt 1 ]]; then
+  fail-message "The support tenant has not been served by the small model yet. Run the 'auto' request."
+  exit 1
+fi
+exit 0

@@ -1,0 +1,43 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: inference-internal
+  namespace: f5-bnk
+spec:
+  gatewayClassName: f5-gateway-class
+  addresses:
+  - {type: IPAddress, value: 172.16.201.111}
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 8000
+    allowedRoutes:
+      namespaces:
+        from: Selector
+        selector:
+          matchLabels: {kubernetes.io/metadata.name: inference}
+---
+# The rule order matters only for readability: each rule needs its header, and a request
+# without the header matches no rule and gets 404 from the Gateway. That is deliberate: an
+# unlabelled request never lands on an arbitrary pool.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: pools-by-header
+  namespace: inference
+spec:
+  parentRefs:
+  - {name: inference-internal, namespace: f5-bnk, sectionName: http}
+  rules:
+  - matches:
+    - path: {type: PathPrefix, value: /v1}
+      headers:
+      - {type: Exact, name: x-switchyard-pool, value: small}
+    backendRefs:
+    - {group: inference.networking.k8s.io, kind: InferencePool, name: small-pool, port: 8000}
+  - matches:
+    - path: {type: PathPrefix, value: /v1}
+      headers:
+      - {type: Exact, name: x-switchyard-pool, value: large}
+    backendRefs:
+    - {group: inference.networking.k8s.io, kind: InferencePool, name: large-pool, port: 8000}

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Switchyard on BNK, live</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%277%27 fill=%27%231f8a5b%27/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #14181f; --muted: #5b6472; --line: #e3e6eb;
+  --small: #1f8a5b; --large: #6b4fd8; --refused: #c2362f; --warn: #b7791f; --accent: #0b6bcb;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1216; --panel: #171b21; --ink: #e8ebef; --muted: #98a2b0; --line: #262c35;
+          --small: #3fbf86; --large: #9a83ff; --refused: #f0645c; --warn: #e3a646; --accent: #58a6ff; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+       font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { padding: 18px 24px 8px; }
+h1 { margin: 0; font-size: 20px; font-weight: 650; }
+.sub { color: var(--muted); margin-top: 4px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+.dot.on { background: var(--small); }
+main { padding: 8px 24px 24px; display: grid; gap: 16px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.kpi, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.kpi { padding: 12px 14px; }
+.kpi .label { color: var(--muted); font-size: 12px; }
+.kpi .value { font-size: 24px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.kpi .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.save { color: var(--small); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .row2 { grid-template-columns: 1fr; } }
+.panel { padding: 12px 14px; }
+.panel h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.bar { display: grid; grid-template-columns: 210px 1fr 48px; align-items: center; gap: 8px; margin: 5px 0; }
+.bar .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.track { height: 10px; background: var(--line); border-radius: 5px; overflow: hidden; }
+.fill { height: 100%; border-radius: 5px; transition: width .3s; }
+.count { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-weight: 600; font-size: 12px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-variant-numeric: tabular-nums; }
+tr.new { animation: flash 1.2s ease-out; }
+@keyframes flash { from { background: color-mix(in srgb, var(--accent) 18%, transparent); } to { background: transparent; } }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; }
+.b-small { background: var(--small); } .b-large { background: var(--large); }
+.b-refused { background: var(--refused); } .b-other { background: var(--muted); }
+.muted { color: var(--muted); }
+.prompt { max-width: 360px; color: var(--muted); }
+.why { font-size: 12px; color: var(--muted); }
+.warn { color: var(--warn); font-size: 12px; }
+footer { color: var(--muted); font-size: 12px; padding: 0 24px 20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Right model, right GPU, right tenant</h1>
+  <div class="sub"><span id="conn" class="dot"></span>NVIDIA Switchyard picks the model. BNK's F5 Endpoint Picker picks the pod. Tenant policy decides who may use what.</div>
+</header>
+<main>
+  <section class="kpis">
+    <div class="kpi"><div class="label">Requests</div><div class="value" id="k-req">0</div><div class="note" id="k-ref">0 refused by policy</div></div>
+    <div class="kpi"><div class="label">Answered by the small model</div><div class="value" id="k-small">–</div><div class="note">share of served requests</div></div>
+    <div class="kpi"><div class="label">Spend with Switchyard</div><div class="value" id="k-spend">$0</div><div class="note" id="k-sel">incl. $0 for selection</div></div>
+    <div class="kpi"><div class="label">Same work, frontier model only</div><div class="value" id="k-front">$0</div><div class="note save" id="k-saved">–</div></div>
+    <div class="kpi"><div class="label">Decision time p50</div><div class="value" id="k-dec">–</div><div class="note">Switchyard, incl. judge call</div></div>
+    <div class="kpi"><div class="label">TTFT p50 (streams)</div><div class="value" id="k-ttft">–</div><div class="note">from arrival at the adapter</div></div>
+  </section>
+  <section class="row2">
+    <div class="panel"><h2>Which model did the work (Switchyard)</h2><div id="models"></div></div>
+    <div class="panel"><h2>Which pod served it (BNK endpoint picker)</h2><div id="pods"></div></div>
+  </section>
+  <section class="panel">
+    <h2>Live decisions, newest first</h2>
+    <table>
+      <thead><tr><th>Time</th><th>Tenant</th><th>Request</th><th>Switchyard</th><th>Pool → pod</th><th>Decision</th><th>TTFT</th><th>Tokens in/out</th><th>Cost</th></tr></thead>
+      <tbody id="feed"></tbody>
+    </table>
+  </section>
+</main>
+<footer>Costs are estimates from configured token prices. With mock model servers, pod load and latency are simulated. Prices, not GPU time, drive the savings figure.</footer>
+<script>
+const state = { req: 0, refused: 0, served: 0, small: 0, spend: 0, sel: 0, front: 0,
+                dec: [], ttft: [], models: {}, pods: {} };
+const $ = id => document.getElementById(id);
+const usd = v => v < 0.01 ? "$" + v.toFixed(5) : v < 1 ? "$" + v.toFixed(4) : "$" + v.toFixed(2);
+const p50 = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const colour = m => m === "small" ? "var(--small)" : m === "large" ? "var(--large)" : "var(--accent)";
+
+function bars(el, counts, colourOf) {
+  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+  el.innerHTML = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
+    `<div class="bar"><div class="name" title="${esc(k)}">${esc(k)}</div>` +
+    `<div class="track"><div class="fill" style="width:${(100 * v / total).toFixed(1)}%;background:${colourOf(k)}"></div></div>` +
+    `<div class="count">${v}</div></div>`).join("") || `<div class="muted">waiting for traffic</div>`;
+}
+
+function render() {
+  $("k-req").textContent = state.req;
+  $("k-ref").textContent = `${state.refused} refused by policy`;
+  $("k-small").textContent = state.served ? Math.round(100 * state.small / state.served) + "%" : "–";
+  $("k-spend").textContent = usd(state.spend);
+  $("k-sel").textContent = `incl. ${usd(state.sel)} for selection`;
+  $("k-front").textContent = usd(state.front);
+  $("k-saved").textContent = state.front > 0 ? `${Math.round(100 * (1 - state.spend / state.front))}% less with Switchyard`
+    : state.gateway ? "tokens and cost are metered by BNK's AI gateway" : "–";
+  const d = p50(state.dec), t = p50(state.ttft);
+  $("k-dec").textContent = d === null ? "–" : d + " ms";
+  $("k-ttft").textContent = t === null ? "–" : t + " ms";
+  bars($("models"), state.models, colour);
+  if (state.gateway && !Object.keys(state.pods).length) {
+    $("pods").innerHTML = `<div class="muted">${state.gateway} answers dispatched by BNK's AI gateway; the serving pod is in its request log.</div>`;
+  } else bars($("pods"), state.pods, p => p.startsWith("small") ? "var(--small)" : p.startsWith("large") ? "var(--large)" : "var(--accent)");
+}
+
+// Events that arrive with the page load are history, not news: no highlight for them.
+const opened = Date.now();
+function add(e) {
+  state.req++;
+  const refused = e.status === "refused";
+  // ext_proc mode: the adapter decided and the gateway carried the answer, so tokens, cost and
+  // the serving pod are accounted by the gateway, not here.
+  const viaGateway = e.status === "routed";
+  if (refused) state.refused++;
+  else if (viaGateway) {
+    state.served++; state.gateway = (state.gateway || 0) + 1;
+    if (e.model === "small") state.small++;
+    state.spend += e.selection_cost_usd; state.sel += e.selection_cost_usd;
+    state.dec.push(e.decision_ms);
+    state.models[e.model] = (state.models[e.model] || 0) + 1;
+  } else {
+    state.served++;
+    if (e.model === "small") state.small++;
+    state.spend += e.selection_cost_usd + e.inference_cost_usd;
+    state.sel += e.selection_cost_usd;
+    state.front += Math.max(e.frontier_cost_usd, e.inference_cost_usd);
+    state.dec.push(e.decision_ms);
+    if (e.ttft_ms != null) state.ttft.push(e.ttft_ms);
+    state.models[e.model] = (state.models[e.model] || 0) + 1;
+    const pod = e.served_by || "(not reported)";
+    state.pods[pod] = (state.pods[pod] || 0) + 1;
+  }
+  const badge = refused ? `<span class="badge b-refused">refused</span>`
+    : `<span class="badge ${e.model === "small" ? "b-small" : e.model === "large" ? "b-large" : "b-other"}">${esc(e.model)}</span>`;
+  const why = refused ? `<div class="why">${esc(e.reason)}</div>`
+    : `<div class="why">${esc(e.algorithm)}${e.score != null ? " · p_solve " + e.score.toFixed(2) : ""}${e.reason ? ` · <span class="warn">${esc(e.reason)}</span>` : ""}${e.fallbacks ? ` · ${e.fallbacks} fallback` : ""}</div>`;
+  const row = document.createElement("tr");
+  if (Date.now() - opened > 1500) row.className = "new";
+  row.innerHTML =
+    `<td class="muted">${new Date(e.ts_ms).toLocaleTimeString()}</td>` +
+    `<td>${esc(e.tenant)}</td>` +
+    `<td class="prompt">${e.prompt ? esc(e.prompt) : `<span class="muted">${esc(e.route)}</span>`}</td>` +
+    `<td>${badge}${why}</td>` +
+    `<td>${refused ? "–" : `${esc(e.pool)}<div class="why">${viaGateway ? "dispatched by BNK's AI gateway" : esc(e.served_by || "")}</div>`}</td>` +
+    `<td>${refused ? "–" : e.decision_ms + " ms"}</td>` +
+    `<td>${e.ttft_ms != null ? e.ttft_ms + " ms" : "–"}</td>` +
+    `<td>${refused || viaGateway ? `<span class="muted">${viaGateway ? "in gateway" : "–"}</span>` : e.input_tokens + " / " + e.output_tokens}</td>` +
+    `<td>${refused ? "–" : usd(e.selection_cost_usd + e.inference_cost_usd)}${viaGateway ? `<div class="why">selection only</div>` : ""}</td>`;
+  const feed = $("feed");
+  feed.prepend(row);
+  while (feed.rows.length > 60) feed.deleteRow(-1);
+}
+
+const source = new EventSource("live/events");
+source.onopen = () => $("conn").classList.add("on");
+source.onerror = () => $("conn").classList.remove("on");
+let pending = false;
+source.onmessage = m => { add(JSON.parse(m.data)); if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; render(); }); } };
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# A benchmark report exists and includes the Switchyard-through-BNK scenario.
+set -uo pipefail
+report=$(ls -t "${SY_ROOT:-/root/lab/switchyard}"/bench/results/*/report.md 2>/dev/null | head -1)
+if [[ -z "$report" ]]; then
+  fail-message "No benchmark report yet. Run the benchmark command."
+  exit 1
+fi
+if ! grep -q '^| switchyard-bnk | [0-9]' "$report"; then
+  fail-message "The latest report has no switchyard-bnk results. Run the benchmark with --bnk-url."
+  exit 1
+fi
+exit 0

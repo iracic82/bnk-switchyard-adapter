@@ -1,0 +1,95 @@
+# Adapter configuration for the single-internal-gateway overlay (NEEDS VALIDATION).
+# Both models share one internal VIP; the x-switchyard-pool header selects the pool.
+#
+# Adapter configuration for a BNK 2.4.x cluster.
+#
+# Each logical model is bound to one internal BNK Gateway VIP. That Gateway has exactly one
+# HTTPRoute, whose backendRef is that model's InferencePool. TMM consults the pool's F5 EPP,
+# which picks the endpoint. The adapter never picks an endpoint.
+#
+# EDIT the VIPs to match deploy/k8s/base/40-gateways.yaml. EDIT the API key digests:
+#   printf '%s' "$KEY" | sha256sum
+
+[server]
+listen = "0.0.0.0:8080"
+max_body_bytes = 1048576
+request_timeout_secs = 300
+routing_timeout_secs = 20
+
+[identity]
+mode = "api_key"
+
+[[tenants]]
+id = "eng-agents"
+# sk-demo-eng-agents
+api_key_sha256 = ["5ec4d40a2cdd519909d6b3240ab0787b5b11ab9280d3f09cbcbf0bf1023ac3be"]
+allowed_models = ["small", "large"]
+limits = { requests_per_minute = 6000, max_concurrent = 64, max_tokens_per_request = 8192, cost_budget_usd_per_hour = 50.0 }
+
+[[tenants]]
+id = "support-agents"
+# sk-demo-support-agents
+api_key_sha256 = ["91a0d0c413f3a9ba335414af32e1b47177972bd71e1c97c53a29ca10d9c5837c"]
+allowed_models = ["small"]
+limits = { requests_per_minute = 600, max_concurrent = 16, max_tokens_per_request = 2048, cost_budget_usd_per_hour = 2.0, tier_fallback = "degrade" }
+
+[[tenants]]
+id = "research"
+# sk-demo-research
+api_key_sha256 = ["556df7c4bcd0c781337b3dcad1ec8131cfeb417f6acf7ec293e190d6f55f0e13"]
+allowed_models = ["large"]
+allowed_routes = []
+limits = { requests_per_minute = 120, max_concurrent = 8 }
+
+# Benchmark tenants (bench/run_bench.py): equal permissions, used to measure fairness.
+[[tenants]]
+id = "team-a"
+# sk-bench-team-a
+api_key_sha256 = ["b9ccbfce42dca23968d4930d49a18232a05284df0ba3117dc1ec6a567af2a451"]
+allowed_models = ["small", "large"]
+limits = { max_concurrent = 48 }
+
+[[tenants]]
+id = "team-b"
+# sk-bench-team-b
+api_key_sha256 = ["31ecf2fb801dce9481e2536ec3aa0532b6633ad5ca19edfea9df61d26b6e2548"]
+allowed_models = ["small", "large"]
+limits = { max_concurrent = 48 }
+
+[models.small]
+# Served model name; must equal the F5EPP spec.tokenizer.name for prefix-cache scoring.
+provider_model = "Qwen/Qwen3-0.6B"
+# Internal Gateway "inference-small" (VIP, listener port 8000) -> InferencePool inference/small-pool.
+base_url = "http://172.16.201.111:8000/v1"
+headers = { "x-switchyard-pool" = "small" }
+inference_pool = "inference/small-pool"
+timeout_secs = 120
+max_retries = 1
+cost = { input_per_1m_usd = 0.10, output_per_1m_usd = 0.40 }
+
+[models.large]
+provider_model = "Qwen/Qwen3-32B"
+# Internal Gateway "inference-large" -> InferencePool inference/large-pool.
+base_url = "http://172.16.201.111:8000/v1"
+headers = { "x-switchyard-pool" = "large" }
+inference_pool = "inference/large-pool"
+timeout_secs = 300
+max_retries = 1
+cost = { input_per_1m_usd = 2.00, output_per_1m_usd = 8.00 }
+
+[routes.auto]
+algorithm = "task_classifier"
+efficient = ["small"]
+capable = ["large"]
+# The judge is the small model, reached through the small pool: BNK balances judge calls too.
+judge = "small"
+classifier = { base_threshold = 0.6, response_format_type = "json_schema", judge_deadline_ms = 5000 }
+
+[routes.weighted]
+algorithm = "random"
+models = ["small", "large"]
+weights = [0.7, 0.3]
+
+[routes.passthrough]
+algorithm = "passthrough"
+models = ["large", "small"]

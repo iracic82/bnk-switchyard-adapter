@@ -1,0 +1,11 @@
+# switchyard: the adapter. inference: model servers, InferencePools and F5EPPs.
+# The inference namespace must be listed in CNEInstance.spec.eppNamespaces (see README).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: switchyard
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference

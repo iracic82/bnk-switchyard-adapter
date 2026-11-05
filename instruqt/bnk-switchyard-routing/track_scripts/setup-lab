@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Builds the lab on the one VM: the base BNK lab from a pinned commit (fabric, kind, BNK 2.4.2 with
+# the AI gateway, TMM on the fabric), then Switchyard. Nothing in the base repository is changed:
+# its install steps run as they are, and the steps this demo does not need are not run.
+set -euo pipefail
+exec > >(tee -a /var/log/setup-lab.log) 2>&1
+trap 'sleep 2' EXIT
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin:/root/.local/bin"
+export HOME="${HOME:-/root}"
+fail() { echo; echo "FAILED: $*" >&2; exit 1; }
+step() { echo; echo "### $(date -u +%H:%M:%S) $*"; }
+
+for v in FAR_PULL_B64 BNK_LICENSE_JWT GH_READ_TOKEN BASE_REPO BASE_COMMIT SY_REPO; do
+  [ -n "${!v:-}" ] || fail "$v is not set"
+done
+[[ "$SY_REPO" != *REPLACE-ME* ]] || fail "set SY_REPO in config.yml"
+
+step "secrets to disk (removed again once BNK is installed)"
+umask 077; mkdir -p "$SECRETS_DIR"
+printf '%s' "$FAR_PULL_B64" > "$SECRETS_DIR/cne_pull_64.json"
+printf '%s' "$BNK_LICENSE_JWT" > "$SECRETS_DIR/license.jwt"
+umask 022
+
+checkout() { # repo ref-or-commit dir
+  local url="https://x-access-token:${GH_READ_TOKEN}@$1"
+  [ -d "$3/.git" ] || git init -q "$3"
+  git -C "$3" fetch -q --depth 1 "$url" "$2" || fail "fetch $1 $2 failed"
+  git -C "$3" checkout -q -f FETCH_HEAD
+  git -C "$3" remote remove origin 2>/dev/null || true
+  git -C "$3" remote add origin "https://$1"
+  echo "$1 at $(git -C "$3" rev-parse --short HEAD)"
+}
+step "base lab (pinned) and this repository"
+checkout "$BASE_REPO" "$BASE_COMMIT" "$LAB_ROOT"
+checkout "$SY_REPO" "${SY_REF:-main}" "$SY_ROOT"
+unset GH_READ_TOKEN
+
+export SECRETS_DIR LICENSE_FILE=license.jwt KUBECONFIG="$LAB_ROOT/clab/kubeconfig" LAB_PUBLIC=1
+cd "$LAB_ROOT"
+step "host";             bash install/00-host-prep.sh
+step "registry mirrors"; bash install/05-registry-mirrors.sh
+step "fabric + kind";    bash install/10-fabric.sh
+step "cluster";          bash install/20-cluster.sh
+step "BNK";              bash install/30-bnk.sh
+step "BNK on the fabric"; bash install/35-bnk-network.sh
+shred -u "$SECRETS_DIR/cne_pull_64.json" "$SECRETS_DIR/license.jwt" 2>/dev/null || true
+unset FAR_PULL_B64 BNK_LICENSE_JWT
+
+step "Switchyard"
+bash "$SY_ROOT/scripts/instruqt-kind-layer.sh" || fail "the Switchyard layer failed"
+
+cat > /etc/profile.d/switchyard.sh <<EOF
+export KUBECONFIG=$LAB_ROOT/clab/kubeconfig LAB_ROOT=$LAB_ROOT SY_ROOT=$SY_ROOT SECRETS_DIR=$SECRETS_DIR
+cd $SY_ROOT 2>/dev/null || true
+EOF
+echo "READY $(date -u +%H:%M:%S)"

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -uo pipefail
+for prompt in "Write a commit message for a typo fix." "Debug this race condition between two workers."; do
+  curl -s -o /dev/null -m 30 http://172.16.201.110/v1/chat/completions \
+    -H 'Authorization: Bearer sk-demo-eng-agents' -H 'content-type: application/json' \
+    -d "{\"model\":\"auto\",\"messages\":[{\"role\":\"user\",\"content\":\"$prompt\"}]}"
+done

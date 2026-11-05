@@ -1,0 +1,43 @@
+slug: bnk-switchyard-routing
+title: "Right model, right GPU: NVIDIA Switchyard on F5 BIG-IP Next for Kubernetes"
+teaser: NVIDIA Switchyard picks the model for each agent step. BNK's endpoint picker
+  picks the GPU replica. Tenant policy decides who may use which model.
+description: |-
+  An agent task is a chain of steps and most of them are easy. Pin one big model and every
+  "format this as JSON" step queues on your most expensive GPUs. Pin a small model and the
+  hard steps fail.
+
+  This lab runs NVIDIA NeMo Switchyard next to the GPUs, on a live BIG-IP Next for Kubernetes
+  2.4 cluster. Switchyard's task classifier decides which model each request needs. The
+  request then goes through BNK to that model's InferencePool, where the F5 Endpoint Picker
+  chooses the replica by queue depth and cache state. A tenant policy sits outside both, so a
+  routing mistake can never spend frontier GPU time for a tenant that isn't allowed it.
+
+  1. **Two decisions.** Watch Switchyard choose the model and BNK choose the replica.
+  2. **From model name to GPU pod.** Follow one request through the Gateways, routes, pools
+     and endpoint pickers, and see the picker spread load.
+  3. **Tenant governance.** A support bot that may only use the small model, and what happens
+     when it asks for more.
+  4. **The cost of a decision.** Run the same agent workload three ways and compare cost,
+     task success and time to first token.
+
+  The model servers are mocks with vLLM-style metrics, so the lab needs no GPUs. Every
+  number the lab shows says whether it is simulated.
+icon: ""
+tags:
+- ai
+- kubernetes
+- f5
+- nvidia
+owner: f5
+developers:
+- iracic@infoblox.com
+idle_timeout: 14400
+timelimit: 14400
+lab_config:
+  sidebar_enabled: true
+  feedback_recap_enabled: true
+  feedback_tab_enabled: false
+  loadingMessages: true
+  hideStopButton: false
+enhanced_loading: false

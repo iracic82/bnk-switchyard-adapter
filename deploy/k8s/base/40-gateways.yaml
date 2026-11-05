@@ -1,0 +1,65 @@
+# Three BNK Gateways on TMM. EDIT the VIP addresses for your network.
+#
+#   switchyard-external  172.16.201.110:80    clients -> adapter         (routes from switchyard ns)
+#   inference-small      172.16.201.111:8000  adapter -> small-pool      (routes from inference ns)
+#   inference-large      172.16.201.112:8000  adapter -> large-pool      (routes from inference ns)
+#
+# Loop prevention: the external Gateway admits routes only from the switchyard namespace,
+# and the internal Gateways only from the inference namespace. No route attaches to both.
+# The adapter also refuses requests that carry its own hop header (508).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: switchyard-external
+  namespace: f5-bnk
+spec:
+  gatewayClassName: f5-gateway-class
+  addresses:
+  - {type: IPAddress, value: 172.16.201.110}
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80
+    allowedRoutes:
+      namespaces:
+        from: Selector
+        selector:
+          matchLabels: {kubernetes.io/metadata.name: switchyard}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: inference-small
+  namespace: f5-bnk
+spec:
+  gatewayClassName: f5-gateway-class
+  addresses:
+  - {type: IPAddress, value: 172.16.201.111}
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 8000
+    allowedRoutes:
+      namespaces:
+        from: Selector
+        selector:
+          matchLabels: {kubernetes.io/metadata.name: inference}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: inference-large
+  namespace: f5-bnk
+spec:
+  gatewayClassName: f5-gateway-class
+  addresses:
+  - {type: IPAddress, value: 172.16.201.112}
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 8000
+    allowedRoutes:
+      namespaces:
+        from: Selector
+        selector:
+          matchLabels: {kubernetes.io/metadata.name: inference}

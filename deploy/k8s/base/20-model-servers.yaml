@@ -1,0 +1,92 @@
+# Two model pools, two replicas each, using mock-llm (no GPU). The mocks serve real Hugging
+# Face model names so the F5EPP can load a matching tokenizer. They are NOT those models.
+# For real vLLM on GPUs, apply deploy/k8s/models-real/ instead of this file.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: small-model
+  namespace: inference
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: small-model}
+  template:
+    metadata:
+      labels:
+        app: small-model
+        inference.switchyard.dev/pool: small
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: server
+        image: mock-llm:dev
+        imagePullPolicy: IfNotPresent
+        ports:
+        - {name: http, containerPort: 8000}
+        env:
+        - {name: MOCK_MODEL, value: "Qwen/Qwen3-0.6B"}
+        - {name: MOCK_PROFILE, value: small}
+        # The small pool also serves the classifier's judge calls. Simulated judge error rate.
+        - {name: MOCK_JUDGE_ERROR_RATE, value: "0.1"}
+        - {name: MOCK_SLOTS, value: "8"}
+        - name: MOCK_POD
+          valueFrom: {fieldRef: {fieldPath: metadata.name}}
+        readinessProbe:
+          httpGet: {path: /health, port: http}
+        resources:
+          requests: {cpu: 100m, memory: 32Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: large-model
+  namespace: inference
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: large-model}
+  template:
+    metadata:
+      labels:
+        app: large-model
+        inference.switchyard.dev/pool: large
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: server
+        image: mock-llm:dev
+        imagePullPolicy: IfNotPresent
+        ports:
+        - {name: http, containerPort: 8000}
+        env:
+        - {name: MOCK_MODEL, value: "Qwen/Qwen3-32B"}
+        - {name: MOCK_PROFILE, value: large}
+        - {name: MOCK_SLOTS, value: "4"}
+        - name: MOCK_POD
+          valueFrom: {fieldRef: {fieldPath: metadata.name}}
+        readinessProbe:
+          httpGet: {path: /health, port: http}
+        resources:
+          requests: {cpu: 100m, memory: 32Mi}
+---
+# Plain Services for the model pods. BNK routes answers through the InferencePools; these are for
+# the adapter's judge call and for gateways that address a model server directly.
+apiVersion: v1
+kind: Service
+metadata:
+  name: small-model
+  namespace: inference
+spec:
+  selector: {app: small-model}
+  ports:
+  - {name: http, port: 8000, targetPort: http}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: large-model
+  namespace: inference
+spec:
+  selector: {app: large-model}
+  ports:
+  - {name: http, port: 8000, targetPort: http}

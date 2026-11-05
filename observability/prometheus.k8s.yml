@@ -1,0 +1,58 @@
+# In-cluster scrape config. Add to your Prometheus (needs RBAC to list pods/endpoints).
+#
+# Correlating with BNK:
+#   - adapter:        sy_adapter_* (this repo), labelled by tenant, route, model, pool
+#   - model servers:  vllm:* gauges per pod (real with vLLM; simulated with mock-llm)
+#   - F5 EPP:         the controller-rendered EPP pods in the pool namespace. A BNK 2.4 lab
+#                     exposed EPP metrics on port 9090 (for example
+#                     f5_epp_prefix_index_lookups_total). Verify the port on your cluster:
+#                     kubectl -n inference get pod -l <epp labels> -o yaml | grep -A3 ports
+#
+# Per-request correlation: the adapter forwards x-request-id to the internal Gateway, so the
+# same ID appears in adapter logs and traces and reaches the model server. Whether the F5 EPP
+# logs that header is not documented; per-pool EPP metrics join on pool and time window only.
+scrape_configs:
+- job_name: switchyard-adapter
+  kubernetes_sd_configs:
+  - role: pod
+    namespaces: {names: [switchyard]}
+  relabel_configs:
+  - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+    action: keep
+    regex: "true"
+  - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+    regex: (.+);(.+)
+    replacement: $1:$2
+    target_label: __address__
+- job_name: model-servers
+  kubernetes_sd_configs:
+  - role: pod
+    namespaces: {names: [inference]}
+  relabel_configs:
+  - source_labels: [__meta_kubernetes_pod_label_app]
+    action: keep
+    regex: (small|large)-model
+  - source_labels: [__meta_kubernetes_pod_label_app]
+    regex: (small|large)-model
+    replacement: $1
+    target_label: pool
+  - source_labels: [__meta_kubernetes_pod_ip]
+    replacement: $1:8000
+    target_label: __address__
+  - source_labels: [__meta_kubernetes_pod_name]
+    target_label: pod
+- job_name: f5-epp
+  kubernetes_sd_configs:
+  - role: pod
+    namespaces: {names: [inference]}
+  relabel_configs:
+  - source_labels: [__meta_kubernetes_pod_container_port_number]
+    action: keep
+    regex: "9090"
+  - source_labels: [__meta_kubernetes_pod_name]
+    regex: (small|large)-pool-epp.*
+    action: keep
+  - source_labels: [__meta_kubernetes_pod_name]
+    regex: (small|large)-pool-epp.*
+    replacement: $1
+    target_label: pool

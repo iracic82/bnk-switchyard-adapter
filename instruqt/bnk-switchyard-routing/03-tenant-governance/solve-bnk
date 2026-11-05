@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -uo pipefail
+for model in large auto; do
+  curl -s -o /dev/null -m 30 http://172.16.201.110/v1/chat/completions \
+    -H 'Authorization: Bearer sk-demo-support-agents' -H 'content-type: application/json' \
+    -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"Design a migration plan.\"}]}"
+done

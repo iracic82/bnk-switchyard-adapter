@@ -1,0 +1,48 @@
+[workspace]
+resolver = "3"
+members = ["crates/adapter", "crates/mock-llm"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.96.1"
+
+[workspace.dependencies]
+# Switchyard is pinned to one upstream commit. Update all four together.
+switchyard-libsy = { git = "https://github.com/NVIDIA-NeMo/Switchyard", rev = "993d9c5486bfd79f1edfaeda026672c4d9f5d537" }
+switchyard-protocol = { git = "https://github.com/NVIDIA-NeMo/Switchyard", rev = "993d9c5486bfd79f1edfaeda026672c4d9f5d537" }
+switchyard-translation = { git = "https://github.com/NVIDIA-NeMo/Switchyard", rev = "993d9c5486bfd79f1edfaeda026672c4d9f5d537" }
+switchyard-llm-client = { git = "https://github.com/NVIDIA-NeMo/Switchyard", rev = "993d9c5486bfd79f1edfaeda026672c4d9f5d537" }
+
+anyhow = "1"
+async-stream = "0.3"
+axum = "0.8"
+bytes = "1"
+futures = "0.3"
+http = "1"
+parking_lot = "0.12"
+prometheus = "0.14"
+rand = "0.10"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+toml = "0.9"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["limit", "timeout", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.33"
+opentelemetry = { version = "0.32", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["http-proto", "trace", "reqwest-blocking-client", "reqwest-rustls"] }
+uuid = { version = "1", features = ["v7"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
