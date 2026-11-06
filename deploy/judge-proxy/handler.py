@@ -1,0 +1,106 @@
+"""Judge proxy: lets lab sandboxes call NVIDIA's hosted API without holding the NVIDIA key.
+
+A lab's setup mints a token for its own sandbox, signed with a key only setup sees:
+    base64url(payload) "." base64url(HMAC-SHA256(signing_key, base64url(payload)))
+    payload = {"sid": sandbox id, "exp": unix seconds, "q": max calls}
+The proxy checks the signature and expiry, counts calls per sandbox in DynamoDB, allows only
+POST /v1/chat/completions for the configured models (non-streaming, output capped), and forwards
+with the NVIDIA key from Secrets Manager. Prompts and answers are never logged.
+
+Environment: UPSTREAM, MODELS (comma list), MAX_TOKENS_CAP, TABLE, NVIDIA_SECRET, SIGNING_SECRET.
+"""
+
+import base64
+import hashlib
+import hmac
+import json
+import os
+import time
+import urllib.error
+import urllib.request
+
+import boto3
+
+_secrets = boto3.client("secretsmanager")
+_table = boto3.resource("dynamodb").Table(os.environ["TABLE"])
+_cache = {}
+
+
+def _secret(name):
+    if name not in _cache:
+        _cache[name] = _secrets.get_secret_value(SecretId=os.environ[name])["SecretString"].strip()
+    return _cache[name]
+
+
+def _reply(status, body):
+    return {"statusCode": status, "headers": {"content-type": "application/json"},
+            "body": body if isinstance(body, str) else json.dumps(body)}
+
+
+def _err(status, code, message):
+    return _reply(status, {"error": {"code": code, "message": message, "type": "judge_proxy"}})
+
+
+def _b64d(s):
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def verify(token, key, now=None):
+    """Returns the token's payload, or None when it is malformed, forged or expired."""
+    try:
+        p, sig = token.split(".", 1)
+        want = base64.urlsafe_b64encode(hmac.new(key.encode(), p.encode(), hashlib.sha256).digest()).rstrip(b"=")
+        if not hmac.compare_digest(want, sig.encode()):
+            return None
+        claims = json.loads(_b64d(p))
+        if not isinstance(claims.get("sid"), str) or not claims["sid"] or claims.get("exp", 0) < (now or time.time()):
+            return None
+        return claims
+    except Exception:
+        return None
+
+
+def handler(event, _context):
+    http = event.get("requestContext", {}).get("http", {})
+    if http.get("method") != "POST" or event.get("rawPath") != "/v1/chat/completions":
+        return _err(404, "not_found", "only POST /v1/chat/completions")
+    auth = (event.get("headers") or {}).get("authorization", "")
+    claims = verify(auth[7:] if auth.lower().startswith("bearer ") else "", _secret("SIGNING_SECRET"))
+    if not claims:
+        return _err(401, "bad_token", "missing, forged or expired lab token")
+    raw = event.get("body") or ""
+    if event.get("isBase64Encoded"):
+        raw = base64.b64decode(raw).decode()
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        return _err(400, "bad_json", "the body is not JSON")
+    if body.get("model") not in os.environ["MODELS"].split(","):
+        return _err(403, "model_not_allowed", "this proxy serves the lab's judge model only")
+    if body.get("stream"):
+        return _err(400, "no_streaming", "streaming is not proxied")
+    cap = int(os.environ.get("MAX_TOKENS_CAP", "512"))
+    body["max_tokens"] = min(int(body.get("max_tokens") or cap), cap)
+    body.pop("max_completion_tokens", None)
+    try:
+        _table.update_item(
+            Key={"sid": claims["sid"]},
+            UpdateExpression="ADD n :one SET #t = :ttl",
+            ConditionExpression="attribute_not_exists(n) OR n < :q",
+            ExpressionAttributeNames={"#t": "ttl"},
+            ExpressionAttributeValues={":one": 1, ":q": int(claims.get("q", 0)), ":ttl": int(claims["exp"]) + 86400})
+    except _table.meta.client.exceptions.ConditionalCheckFailedException:
+        return _err(429, "quota", "this lab has used its judge calls")
+    req = urllib.request.Request(os.environ["UPSTREAM"].rstrip("/") + "/chat/completions",
+                                 data=json.dumps(body).encode(), method="POST",
+                                 headers={"Authorization": "Bearer " + _secret("NVIDIA_SECRET"),
+                                          "Content-Type": "application/json", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=25) as r:
+            return _reply(r.status, r.read().decode())
+    except urllib.error.HTTPError as e:
+        print(json.dumps({"sid": claims["sid"], "upstream_status": e.code}))
+        return _reply(e.code, e.read().decode() or json.dumps({"error": {"code": "upstream"}}))
+    except Exception as e:
+        print(json.dumps({"sid": claims["sid"], "upstream_error": type(e).__name__}))
+        return _err(502, "upstream_unreachable", "NVIDIA's API did not answer")
