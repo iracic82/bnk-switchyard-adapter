@@ -15,6 +15,9 @@
 # auto-dynamo is not a gateway model: the AI gateway hands only `auto` to Switchyard. sy sends
 # model auto with the header x-switchyard-use-route: auto-dynamo, which picks Switchyard's route.
 #
+# SY_SESSION=<id> sy ask "..."    one conversation: auto requests go to route auto-session with that
+#                                  session ID, so the judge decides once and the session keeps the model
+#
 # The client sits outside the cluster, behind the fabric's router, like a real caller.
 set -uo pipefail
 VIP=${SY_VIP:-172.16.100.19}
@@ -26,6 +29,8 @@ body() { jq -nc --arg m "$1" --arg p "$2" --argjson s "${3:-false}" '{model:$m,s
 post() { # model prompt stream
   local m=$1 route=()
   [ "$m" = auto-dynamo ] && { m=auto; route=(-H "x-switchyard-use-route: auto-dynamo"); }
+  [ "$m" = auto ] && [ -n "${SY_SESSION:-}" ] && [ ${#route[@]} -eq 0 ] && \
+    route=(-H "x-switchyard-use-route: auto-session" -H "x-switchyard-session-id: $SY_SESSION")
   docker exec -i client curl -s -m 120 "http://$VIP/v1/chat/completions" -D /dev/stderr "${route[@]}" \
     -H "Authorization: Bearer $(key "$WHO")" -H 'Content-Type: application/json' -d "$(body "$m" "$2" "$3")"
 }
@@ -44,7 +49,7 @@ cfg_apply() {
 case "${1:-}" in
   ask)
     shift; [ $# -ge 2 ] && { m=$1; shift; } || m=auto
-    post "$m" "$*" false 2> >(grep -iE '^(HTTP|x-switchyard|x-selected-model|x-served-by|x-pool-pick|x-pool-endpoint)' >&2) | jq -r '.model + ": " + (.choices[0].message.content // "" | .[0:160]) // .'
+    post "$m" "$*" false 2> >(grep -iE '^(HTTP|x-guardrail|x-switchyard|x-selected-model|x-served-by|x-pool-pick|x-pool-endpoint)' >&2) | jq -r '.model + ": " + (.choices[0].message.content // "" | .[0:160]) // .'
     ;;
   stream)
     shift; [ $# -ge 2 ] && { m=$1; shift; } || m=auto

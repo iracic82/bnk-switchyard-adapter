@@ -145,6 +145,13 @@ efficient = ["small"]
 capable = ["large"]
 judge = "small"
 classifier = {{ base_threshold = 0.6 }}
+
+[routes.sticky]
+algorithm = "task_classifier"
+efficient = ["small"]
+capable = ["large"]
+judge = "small"
+classifier = {{ base_threshold = 0.6, classify_trigger = "new_session" }}
 {extra}
 "#,
         digest = key_digest()
@@ -303,6 +310,13 @@ mod ext_proc {
         large: SocketAddr,
         restrict: Option<bnk_switchyard_adapter::config::TierFallback>,
     ) -> u16 {
+        // Tests run in parallel. Between picking a free port and the ext_proc server binding it,
+        // another test could pick the same one and then talk to the wrong server. One at a time.
+        static START: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+        let _one_at_a_time = START
+            .get_or_init(|| tokio::sync::Mutex::new(()))
+            .lock()
+            .await;
         let port = std::net::TcpListener::bind("127.0.0.1:0")
             .unwrap()
             .local_addr()
@@ -432,6 +446,34 @@ mod ext_proc {
         // An unknown route name is ignored.
         let r = exchange_with(port, hello("auto"), &[("x-switchyard-use-route", "nope")]).await;
         assert_eq!(model_of(&r).as_deref(), Some(&b"small"[..]));
+    }
+
+    #[tokio::test]
+    async fn a_session_is_judged_once_and_keeps_its_model() {
+        let small = upstream("prov-small", Behaviour::Ok).await;
+        let large = upstream("prov-large", Behaviour::Ok).await;
+        let port = start(small.addr, large.addr).await;
+        let ask = |session: &'static str| async move {
+            let headers = [
+                ("x-switchyard-use-route", "sticky"),
+                ("x-switchyard-session-id", session),
+            ];
+            exchange_with(port, hello("auto"), &headers).await
+        };
+        ask("s1").await;
+        ask("s1").await;
+        ask("s1").await;
+        assert_eq!(
+            small.seen.lock().bodies.len(),
+            1,
+            "one judge call for three requests in one session"
+        );
+        ask("s2").await;
+        assert_eq!(
+            small.seen.lock().bodies.len(),
+            2,
+            "a new session is judged again"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]

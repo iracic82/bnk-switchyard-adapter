@@ -176,7 +176,7 @@ gets 403).
 | What | Where | Result |
 |---|---|---|
 | Rust unit tests (config, tenancy, picker answers and mutations, default output limit, graded judge) | `cargo test` | 17 pass |
-| Integration tests: upstream request shape, fallback, error passthrough, judge fail-open, routing timeout, ext_proc decisions and policy, the route header and its tenant limit | in-process scripted upstreams | 13 pass |
+| Integration tests: upstream request shape, fallback, error passthrough, judge fail-open, routing timeout, ext_proc decisions and policy, the route header and its tenant limit, one judgement per session | in-process scripted upstreams | 14 pass |
 | Pool bridge against a scripted endpoint picker: forward to the picked pod with the picker's headers, client routing headers dropped, fail open (picker down, pod gone), picker refusal | in-process | 4 pass |
 | 34 end-to-end checks: three algorithms, governance, streaming, tool calls, cancellation, metrics | local processes, `make demo-local` | all pass |
 | The same 34 checks with the real container images | kind cluster, suite run from a pod (`make kind-smoke`) | all pass |
@@ -208,9 +208,9 @@ The hairpin path (pod to a BNK VIP and back into the cluster) has worked in an e
 |---|---|
 | 1 Two decisions | sends easy and hard steps through the gateway; watches Switchyard pick the model and F5's picker pick the pod |
 | 2 From model name to GPU pod | follows a request from the gateway's address to the pod; a burst spreads across replicas |
-| 3 Who may use which model | a model outside the key's scope is refused; a pilot key's token budget runs out |
+| 3 Who may use which model | a model outside the key's scope is refused; a pilot key's token budget runs out; a guardrail iRule in TMM (CalypsoAI, or a stand-in) answers a data-export prompt before the gateway, Switchyard or a model sees it |
 | 4 The cost of a decision | runs one agent workload as small only, large only and `auto`; compares cost per completed task |
-| 5 Tune the judge | moves the judge threshold (`sy threshold`) and sweeps it through the gateway (`--sweep`): escalations, success and cost per completed task move together |
+| 5 Tune the judge | moves the judge threshold (`sy threshold`), asks the real Nemotron judge, judges once per conversation (`auto-session`, `classify_trigger = "new_session"`), and sweeps the threshold through the gateway (`--sweep`) |
 | 6 A Dynamo pool | NVIDIA Dynamo as a third model; F5's picker reads Dynamo's KV events and names the worker |
 
 The judge is a stand-in by default (`mock-llm` with a graded `p_solve`). `sy judge nemotron`

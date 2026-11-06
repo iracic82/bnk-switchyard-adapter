@@ -42,3 +42,9 @@ secrets:
 # Setup mints the token and forgets this key. Without it the lab keeps its stand-in judge.
 - name: JUDGE_PROXY_SIGNING_KEY
   key: JUDGE_PROXY_SIGNING_KEY
+# CalypsoAI, the guardrail's scanner (the base track's team secrets, read only). Without them, or if the service
+# does not pass a clean sentence and flag an export, the lab uses the base lab's mock scanner.
+- name: AI_CALYPSO_API
+  key: AI_CALYPSO_API
+- name: AI_CALYPSO_PROJECT
+  key: AI_CALYPSO_PROJECT

@@ -69,6 +69,14 @@ JUDGE_PROXY_SIGNING_KEY="${JUDGE_PROXY_SIGNING_KEY:-}" JUDGE_PROXY_URL="${JUDGE_
   bash "$SY_ROOT/scripts/instruqt-judge.sh" || echo "!! the Nemotron judge is not set up; the lab keeps its stand-in judge"
 unset JUDGE_PROXY_SIGNING_KEY
 
+step "a guardrail in TMM: the base lab's iRule and CalypsoAI scanner, ready to attach (lesson 3)"
+umask 077
+if [ -n "${AI_CALYPSO_API:-}" ]; then printf '%s' "$AI_CALYPSO_API" > "$SECRETS_DIR/calypso-api-key"; fi
+if [ -n "${AI_CALYPSO_PROJECT:-}" ]; then printf '%s' "$AI_CALYPSO_PROJECT" > "$SECRETS_DIR/calypso-project-id"; fi
+umask 022
+unset AI_CALYPSO_API AI_CALYPSO_PROJECT
+bash "$SY_ROOT/scripts/instruqt-guardrails.sh" || echo "!! the guardrail is not set up; lesson 3's guardrail step will say so"
+
 step "logins for the assignments, the sy helper, and the Topology tab"
 export LAB_ROOT SY_ROOT SECRETS_DIR
 bash "$SY_ROOT/instruqt/bnk-switchyard-routing/scripts/lab-extras.sh"

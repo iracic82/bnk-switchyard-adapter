@@ -71,6 +71,15 @@ capable = ["large"]
 judge = "small"
 classifier = { base_threshold = 0.6, response_format_type = "json_schema", judge_deadline_ms = 3000 }
 
+# The same judge, once per conversation: the first request of a session (x-switchyard-session-id)
+# is judged and the rest of the session keeps that model. Selected with x-switchyard-use-route.
+[routes.auto-session]
+algorithm = "task_classifier"
+efficient = ["small"]
+capable = ["large"]
+judge = "small"
+classifier = { base_threshold = 0.6, response_format_type = "json_schema", judge_deadline_ms = 3000, classify_trigger = "new_session" }
+
 [routes.weighted]
 algorithm = "random"
 models = ["small", "large"]

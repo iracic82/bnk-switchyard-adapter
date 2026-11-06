@@ -103,6 +103,24 @@ judge calls (the benchmark would switch to the stand-in for you anyway):
 sy judge mock
 ```
 
+## One decision per conversation
+
+Judging every step costs a judge call every step. For a conversation that stays on one kind of
+work, Switchyard can judge once and keep the answer: the route `auto-session` does that for a
+session ID. `sy` sends one when you set `SY_SESSION`:
+
+```bash,run
+SY_SESSION=ticket-42 sy ask "Find the root cause of this distributed deadlock between the queue consumer and the lock service."
+SY_SESSION=ticket-42 sy ask "Thanks. Now write the incident summary in one sentence."
+SY_SESSION=ticket-43 sy ask "Thanks. Now write the incident summary in one sentence."
+```
+
+In the live view, the first request of `ticket-42` carries the judge's `p_solve` and the second
+reuses its model without a judge call, so its decision takes a few milliseconds. `ticket-43` is
+a new conversation and is judged on its own, so the same short request lands on `sy-small`. One
+judgement per conversation saves judge calls; judging every step reacts when a conversation
+changes. Which is better depends on how your agents work.
+
 ## Sweep it
 
 Now measure the trade-off on the whole agent workload: 60 tasks, once on the small model,
