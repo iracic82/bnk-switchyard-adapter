@@ -61,6 +61,12 @@ ok "Dynamo platform and NATS in dynamo-system"
 
 step "Dynamo: Mocker workers (DynamoGraphDeployment mocker)"
 kubectl apply -f "$M/10-dynamo-mocker.yaml" >/dev/null || fail "DynamoGraphDeployment"
+# The workers prefer nodes that report simulated GPUs, as the other pools do (a preference: they still
+# schedule anywhere if those nodes are full). Component 1 is "decode" in the base lab's graph.
+if [ "$(kubectl -n "$POOL_NS" get dynamographdeployment mocker -o jsonpath='{.spec.components[1].name}')" = decode ]; then
+  kubectl -n "$POOL_NS" patch dynamographdeployment mocker --type json -p '[{"op":"add","path":"/spec/components/1/podTemplate/spec/affinity","value":{"nodeAffinity":{"preferredDuringSchedulingIgnoredDuringExecution":[{"weight":100,"preference":{"matchExpressions":[{"key":"run.ai/simulated-gpu-node-pool","operator":"Exists"}]}}]}}}]' >/dev/null \
+    || warn "could not give the Dynamo workers a GPU-node preference"
+fi
 kubectl -n "$POOL_NS" wait dynamographdeployment/mocker --for=condition=Ready --timeout="$(tmo 1200s 300s)" >/dev/null \
   && ok "mocker Ready: frontend and two workers" || warn "mocker not Ready yet (continuing)"
 

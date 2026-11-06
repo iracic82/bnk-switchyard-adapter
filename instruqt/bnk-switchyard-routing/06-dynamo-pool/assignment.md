@@ -91,12 +91,20 @@ sy ask auto-dynamo "Find the root cause of this distributed deadlock between the
 The easy step should come back from `sy-small` and the hard one from `sy-dynamo`. The judge is
 still wrong one time in ten.
 
-Send the same long prompt several times and watch which worker serves it. A picker that reads KV
-events prefers the worker that already holds the prompt's prefix:
+Now the part that is Dynamo's own: KV-cache affinity. Send the same long prompt six times, one
+after the other, and watch which worker serves it:
 
 ```bash,run
-sy burst 8 sy-dynamo "You are reviewing a payment service. Explain the retry and idempotency rules for at-least-once delivery, then list the failure cases."
+for i in 1 2 3 4 5 6; do
+  sy ask sy-dynamo "You are reviewing a payment service. Explain the retry and idempotency rules for at-least-once delivery, then list the failure cases." 2>&1 | grep x-pool-endpoint
+done
 ```
+
+The first request lands on either worker. That worker now holds the prompt's prefix in its KV
+cache and says so on NATS, and the picker sends every repeat to it: the same address six times.
+A burst of the same prompt behaves differently (`sy burst 8 sy-dynamo "..."`): all eight arrive
+before any worker has cached anything, so the picker spreads them for load. Both are the picker
+doing its job.
 
 Both decisions for the Dynamo pool are in the router's log:
 
