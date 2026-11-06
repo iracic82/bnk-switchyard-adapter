@@ -43,15 +43,20 @@ if [ -s "$SECRETS_DIR/calypso-api-key" ]; then
   files=(--from-file=api-key="$SECRETS_DIR/calypso-api-key")
   [ -s "$SECRETS_DIR/calypso-project-id" ] && files+=(--from-file=project-id="$SECRETS_DIR/calypso-project-id")
   kubectl -n guardrails create secret generic calypso "${files[@]}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-  URL=$(cat "$SECRETS_DIR/calypso-url" 2>/dev/null || true)
-  sub "$M/30-calypso-bridge.yaml" | sed "s|https://us1.calypsoai.app/backend/v1/scans|${URL:-https://us1.calypsoai.app/backend/v1/scans}|" \
-    | kubectl apply -f - >/dev/null
-  kubectl -n guardrails rollout status deploy/calypso-bridge --timeout=180s >/dev/null
-  verdicts=$(probe "$(kubectl -n guardrails get svc calypso-bridge -o jsonpath='{.spec.clusterIP}')")
-  case "$verdicts" in
-    pass*flagged*) SCANNER_SVC=calypso-bridge; MODE=real; ok "real CalypsoAI answers: $verdicts" ;;
-    *) warn "real CalypsoAI is not usable (clean sentence, export: ${verdicts:-no answer}); the lab runs on the mock scanner" ;;
-  esac
+  # The base lab's manifest names us1 and its notes name us2; try the given URL, else both, keep the first that
+  # passes a clean sentence and flags an export.
+  URLS=$(cat "$SECRETS_DIR/calypso-url" 2>/dev/null || echo "https://us1.calypsoai.app/backend/v1/scans https://us2.calypsoai.app/backend/v1/scans")
+  for URL in $URLS; do
+    sub "$M/30-calypso-bridge.yaml" | sed "s|https://us1.calypsoai.app/backend/v1/scans|$URL|" | kubectl apply -f - >/dev/null
+    kubectl -n guardrails rollout restart deploy/calypso-bridge >/dev/null 2>&1 || true
+    kubectl -n guardrails rollout status deploy/calypso-bridge --timeout=180s >/dev/null
+    verdicts=$(probe "$(kubectl -n guardrails get svc calypso-bridge -o jsonpath='{.spec.clusterIP}')")
+    case "$verdicts" in
+      pass*flagged*) SCANNER_SVC=calypso-bridge; MODE=real; ok "real CalypsoAI at $URL answers: $verdicts"; break ;;
+      *) warn "CalypsoAI at $URL is not usable (clean sentence, export: ${verdicts:-no answer})" ;;
+    esac
+  done
+  [ "$MODE" = real ] || warn "the lab runs on the mock scanner"
   shred -u "$SECRETS_DIR/calypso-api-key" "$SECRETS_DIR/calypso-project-id" "$SECRETS_DIR/calypso-url" 2>/dev/null || true
 fi
 SCANNER_IP=$(kubectl -n guardrails get svc "$SCANNER_SVC" -o jsonpath='{.spec.clusterIP}')
