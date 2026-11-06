@@ -195,14 +195,19 @@ async fn decide_inner(
     if !registry.routes.contains_key(&route_name) {
         return Ok(BodyResponse::default());
     }
+    let Some(tenant) = state.tenants.by_id(tenant_id) else {
+        return Ok(BodyResponse::default());
+    };
+    // The header is a caller's request, not an entitlement: it may name only a route the tenant
+    // is allowed (allowed_routes), and the models that route picks are still limited to the
+    // tenant's allowed_models below. Per-key limits are the gateway's (model scope).
     let route_name = match headers.get(USE_ROUTE).and_then(|v| v.to_str().ok()) {
-        Some(r) if registry.routes.contains_key(r) => r.to_owned(),
+        Some(r) if registry.routes.contains_key(r) && tenant.check_route(r, false).is_ok() => {
+            r.to_owned()
+        }
         _ => route_name,
     };
     let Some(route) = registry.routes.get(&route_name).cloned() else {
-        return Ok(BodyResponse::default());
-    };
-    let Some(tenant) = state.tenants.by_id(tenant_id) else {
         return Ok(BodyResponse::default());
     };
     let request_id = headers

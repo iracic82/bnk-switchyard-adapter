@@ -293,6 +293,10 @@ mod ext_proc {
         start_as(small, large, None).await
     }
 
+    thread_local! {
+        static ROUTES: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+    }
+
     /// `restrict`: the ext_proc tenant may use only the small model, with this tier policy.
     async fn start_as(
         small: SocketAddr,
@@ -309,6 +313,7 @@ mod ext_proc {
         for model in text_config.models.values_mut() {
             model.gateway_model = Some(format!("gw-{}", model.provider_model));
         }
+        text_config.tenants[0].allowed_routes = ROUTES.with(|r| r.borrow().clone());
         if let Some(policy) = restrict {
             text_config.tenants[0].allowed_models = vec!["small".into()];
             text_config.tenants[0].limits.tier_fallback = policy;
@@ -427,6 +432,26 @@ mod ext_proc {
         // An unknown route name is ignored.
         let r = exchange_with(port, hello("auto"), &[("x-switchyard-use-route", "nope")]).await;
         assert_eq!(model_of(&r).as_deref(), Some(&b"small"[..]));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn route_header_cannot_name_a_route_the_tenant_is_not_allowed() {
+        let small = upstream("prov-small", Behaviour::Ok).await;
+        let large = upstream("prov-large", Behaviour::Ok).await;
+        ROUTES.with(|r| *r.borrow_mut() = Some(vec!["auto".into()]));
+        let port = start(small.addr, large.addr).await;
+        ROUTES.with(|r| *r.borrow_mut() = None);
+        let r = exchange_with(
+            port,
+            hello("auto"),
+            &[("x-switchyard-use-route", "fallback")],
+        )
+        .await;
+        let Resp::RequestBody(body) = &r[1] else {
+            panic!("expected a body response")
+        };
+        let common = body.response.as_ref().expect("a mutation");
+        assert_eq!(header(common, "x-switchyard-model"), Some(&b"small"[..]));
     }
 
     #[tokio::test]
