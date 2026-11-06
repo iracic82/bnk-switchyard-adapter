@@ -75,8 +75,9 @@ Read the table:
 
 A typical run lands like this: `sy-small` is cheapest per completed task but finishes only about
 a third of them. `sy-large` finishes nine in ten. `auto` sends about a third of the steps to the
-large model, finishes about seven in ten, and costs somewhat less per completed task than
-`sy-large`, often by 15 to 30 percent.
+large model, finishes six to seven tasks in ten, and costs a little less per completed task than
+`sy-large`: anything from a few percent to about 30 percent. With 30 tasks, two more or two fewer
+successes move that number by about 10 percent, so run it twice and the gap will change.
 
 Look at **+judge** next to **cost USD** in the `auto` row. Here the judge costs almost as much as
 the answers. Every step pays for one judge call of about 1,150 tokens, and this lab's large model
