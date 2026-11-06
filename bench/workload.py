@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Synthetic agent workload: episodes of 3-6 steps that mix easy and hard work.
 
-Each step's user message carries a tag `[task:<id>:easy|hard]`. The mock model servers use
-the tag to simulate success (see crates/mock-llm). The mock judge ignores the tag and judges
+Each step's user message carries a tag `[task:<id>:easy|hard]`. mock-llm uses the tag to
+simulate success (see crates/mock-llm); for servers that do not, `step_outcome` simulates it
+with the same rates. The mock judge ignores the tag and judges
 the wording, so routing is imperfect on purpose:
 
 - most hard steps use wording a judge flags as hard ("design", "debug", "prove" ...)
@@ -54,6 +55,23 @@ STEP_KINDS = [
     ("fix", 0.7),
     ("answer", 0.1),
 ]
+
+
+# mock-llm's default success rates (crates/mock-llm): (easy, hard) per model size.
+SUCCESS = {False: (0.95, 0.3), True: (0.98, 0.9)}
+
+
+def step_outcome(text: str, step: dict, large: bool, salt: str = ""):
+    """Whether a step succeeded, and whether that was simulated here.
+
+    mock-llm writes `RESULT: PASS|FAIL` into its answer. Other servers (llm-d's simulator, real
+    vLLM) do not, so the outcome is drawn with mock-llm's rates for the model that served the
+    step. The draw is seeded by step and salt, so reruns of the same run agree.
+    """
+    if "RESULT:" in text:
+        return "RESULT: PASS" in text, False
+    p = SUCCESS[large][1 if step["hard"] else 0]
+    return random.Random(f"{step['id']}/{salt}").random() < p, True
 
 
 def generate(episodes: int, seed: int, hard_share: float):

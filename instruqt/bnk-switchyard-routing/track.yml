@@ -20,7 +20,8 @@ description: |-
   4. **The cost of a decision.** Run the same agent workload three ways and compare task
      success and cost per successful task.
 
-  The model servers are mocks with vLLM-style metrics, so the lab needs no GPUs. Every
+  There are no GPUs: the large model pool runs llm-d's vLLM simulator, the small pool a
+  mock that also plays the judge. Both publish vLLM's metrics to the F5 picker. Every
   number the lab shows says whether it is simulated.
 icon: ""
 tags:

@@ -33,7 +33,7 @@ case "${1:-}" in
       post "$m" "$*" false 2>&1 >/dev/null | tr -d '\r' | awk '
         tolower($1) ~ /^http/ {s=$2} tolower($1)=="x-served-by:" {p=$2}
         tolower($1)=="x-pool-pick:" {k=$2} tolower($1)=="x-pool-endpoint:" {e=$2}
-        END {printf "%s  %-32s %-10s %s\n", s, p, k, e}' &
+        END {printf "%s  %-32s %-10s %s\n", s, (p == "" ? "-" : p), k, e}' &
     done
     wait
     ;;

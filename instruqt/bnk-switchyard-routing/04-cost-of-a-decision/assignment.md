@@ -35,8 +35,11 @@ enhanced_loading: null
 ---
 
 The workload is 30 agent tasks of three to six steps. Most steps are easy; some are hard, and a
-task succeeds only if every step does. The mock model servers decide whether a step succeeded:
-the large model solves 90% of hard steps, the small one 30%. Prices are the ones set on the
+task succeeds only if every step does. Nothing here is a real model, so success is simulated:
+the large model solves 90% of hard steps, the small one 30%. The small pool's mock writes its
+verdict into the answer; the large pool runs llm-d's vLLM simulator, which answers with filler
+text, so the bench draws those outcomes at the same rates and says how many it drew. Latency
+and token counts are the simulators' own. Prices are the ones set on the
 gateway's models: the small model at $0.10 and $0.40 per million input and output tokens, the
 large one at $2 and $8.
 

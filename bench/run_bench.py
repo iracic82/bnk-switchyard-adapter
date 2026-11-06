@@ -112,7 +112,8 @@ def run_episode(url, model, tenant, episode, timeout):
     for step in episode["steps"]:
         messages.append({"role": "user", "content": step["prompt"]})
         r = stream_call(url, TENANTS[tenant], model, messages, session, timeout)
-        r["ok"] = r["error"] is None and "RESULT: PASS" in r["text"]
+        ok, r["simulated"] = workload.step_outcome(r["text"], step, r["served"] == "large", r["served"] or "")
+        r["ok"] = r["error"] is None and ok
         r["hard"] = step["hard"]
         results.append(r)
         if r["error"]:

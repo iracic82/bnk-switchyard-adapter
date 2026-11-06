@@ -5,7 +5,8 @@
 #   - CNEInstance.spec.eppNamespaces includes "inference"
 #   - the F5 registry pull secret exists in "inference"
 #
-# The mock model servers publish no KV-cache events, so the zmq-wire plugin is removed and
+# Neither simulator publishes KV-cache events here (llm-d's can, with --enable-kvcache and a
+# ZMQ endpoint; not wired up or tested with the F5 EPP), so the zmq-wire plugin is removed and
 # the EPP uses speculative prefix tracking. Keep zmq-wire with real vLLM
 # (deploy/k8s/models-real/).
 apiVersion: inference.k8s.f5.com/v1alpha1

@@ -60,6 +60,8 @@ Each answer shows the response headers and the model that answered:
   step, and the gateway sent the request to the model it picked.
 - `x-served-by` and `x-pool-endpoint` are **the second decision**: the pod the F5 Endpoint
   Picker chose inside that model's pool. `x-pool-pick: epp` says the picker made the choice.
+  The large pool runs llm-d's vLLM simulator, which sends no `x-served-by` and answers with
+  filler text; `x-pool-endpoint` still names its pod.
 
 The mock judge looks for words like "distributed" or "root cause" and is wrong one time in ten
 on purpose, so a hard step now and then lands on the small model. Real judges make mistakes

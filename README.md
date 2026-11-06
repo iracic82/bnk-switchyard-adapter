@@ -302,7 +302,9 @@ the dashboard in `observability/grafana/dashboards/`.
 
 The adapter exports nothing about GPUs, KV caches or the EPP. Those come from the model
 servers' `vllm:*` metrics and the EPP's own metrics (`observability/prometheus.k8s.yml`).
-The mock servers' `vllm:*` gauges are simulated and labelled so. Per request, the
+On Kubernetes the small pool runs mock-llm, whose `vllm:*` gauges are simulated and labelled
+so, and the large pool runs llm-d's vLLM simulator (`ghcr.io/llm-d/llm-d-inference-sim`),
+whose queue and latency metrics come from a real scheduler model, not from a GPU. Per request, the
 `x-request-id` reaches the model server; joining with EPP data is by pool and time window,
 because the EPP's logging of request IDs is not documented.
 
