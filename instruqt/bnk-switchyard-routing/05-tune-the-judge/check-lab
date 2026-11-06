@@ -8,4 +8,25 @@ if ! jq -e '[.[] | select(.threshold != null)] | sort_by(.threshold) | (.[0].to_
   fail-message "The highest threshold did not escalate more steps than the lowest. Check 'sy threshold' and run the sweep again."
   exit 1
 fi
+
+# The real judge, when this lab has one (setup reached NVIDIA's API through the judge proxy):
+# the learner judged at least one step with it, and the proxy still answers with this lab's token.
+export KUBECONFIG=${KUBECONFIG:-/root/lab/clab/kubeconfig}
+cfg=$(kubectl -n f5-bnk get cm switchyard-router-config -o jsonpath='{.data.adapter\.toml}' 2>/dev/null)
+if grep -q '^\[models.nemotron\]' <<<"$cfg"; then
+  if ! grep -qE 'judge=nemotron consulted=[1-9][0-9]* unavailable=0' /root/.bnk/aigw/judge-evidence.log 2>/dev/null; then
+    fail-message "No step was judged by Nemotron yet. Run 'sy judge nemotron', then one of the sy ask commands, then 'sy judge mock'."
+    exit 1
+  fi
+  url=$(awk '/^\[models.nemotron\]/{f=1} f && /^base_url/ {gsub(/"/,"",$3); print $3; exit}' <<<"$cfg")
+  model=$(awk '/^\[models.nemotron\]/{f=1} f && /^provider_model/ {gsub(/"/,"",$3); print $3; exit}' <<<"$cfg")
+  hdr=$(mktemp); trap 'rm -f "$hdr"' EXIT
+  printf 'Authorization: Bearer %s\n' "$(kubectl -n f5-bnk get secret switchyard-judge -o jsonpath='{.data.NVIDIA_API_KEY}' | base64 -d)" > "$hdr"
+  code=$(curl -s -m 30 -o /tmp/judge-check.json -w '%{http_code}' "$url/chat/completions" -H @"$hdr" -H 'Content-Type: application/json' \
+    -d "{\"model\":\"$model\",\"max_tokens\":20,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with OK.\"}]}")
+  if [ "$code" != 200 ] || [ -z "$(jq -r '.choices[0].message.content // empty' /tmp/judge-check.json 2>/dev/null)" ]; then
+    fail-message "Nemotron did not answer through the judge proxy (HTTP $code). The lab's token may have expired or used its calls."
+    exit 1
+  fi
+fi
 exit 0

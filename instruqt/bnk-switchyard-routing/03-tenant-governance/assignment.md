@@ -114,7 +114,8 @@ Turn it off again, so the rest of the lab runs without it:
 kubectl delete -f /root/guardrails-attach.yaml
 ```
 
-Click **Check** once the pilot key is being refused.
+Click **Check** once the pilot key is being refused. The check also tests the guardrail itself: it
+attaches it for a moment if needed, sends the export prompt and a clean one, and puts it back as it was.
 
 ## Logins for this lab
 

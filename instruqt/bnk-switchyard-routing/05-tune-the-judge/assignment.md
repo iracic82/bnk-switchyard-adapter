@@ -150,7 +150,8 @@ Prices and success rates are simulated, and with 60 tasks two runs can differ by
 points. On real models the curve keeps its shape; where it bottoms out depends on your models,
 your prices and your workload. That is why the threshold is a setting and not a constant.
 
-Click **Check** when `/root/sweep.json` has a finished sweep.
+Click **Check** when `/root/sweep.json` has a finished sweep. If this lab has the Nemotron judge, the
+check also wants one step judged by it, and calls it once through the judge proxy.
 
 ## Logins for this lab
 

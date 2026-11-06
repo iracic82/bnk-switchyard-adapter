@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail
 export SECRETS_DIR=${SECRETS_DIR:-/root/.bnk} KUBECONFIG=${KUBECONFIG:-/root/lab/clab/kubeconfig}
+# the real judge, when this lab has one
+if sy judge nemotron >/dev/null 2>&1; then
+  sy ask "Convert 72 degrees Fahrenheit to Celsius." >/dev/null 2>&1
+  sy ask "Find the root cause of this distributed deadlock between the queue consumer and the lock service." >/dev/null 2>&1
+  sy judge mock >/dev/null 2>&1
+fi
 python3 "${SY_ROOT:-/root/switchyard}/bench/polaris_bench.py" --episodes 30 --sweep 0.4,0.8 --json /root/sweep.json.tmp >/dev/null 2>&1
 # the check wants three thresholds; a third, shorter run keeps the solve quick
 python3 "${SY_ROOT:-/root/switchyard}/bench/polaris_bench.py" --episodes 20 --sweep 0.6 --json /root/sweep.json.mid >/dev/null 2>&1

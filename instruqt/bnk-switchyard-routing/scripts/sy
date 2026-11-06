@@ -46,10 +46,22 @@ cfg_apply() {
     [ "$(post auto "ping" false 2>&1 >/dev/null | tr -d '\r' | awk 'tolower($1) ~ /^http/ {print $2}' | tail -1)" = 200 ] && break; sleep 2
   done
 }
+# After an auto request judged by Nemotron, note whether the judge answered: one line in
+# $KEYS/judge-evidence.log (the router's own log is lost each time the router restarts).
+record_judge() {
+  case "$1" in auto|auto-dynamo) ;; *) return 0 ;; esac
+  cfg_get 2>/dev/null | grep -q '^judge = "nemotron"' || return 0
+  local logs c w
+  logs=$(kubectl -n f5-bnk logs deploy/switchyard-router --since=60s 2>/dev/null)
+  c=$(jq -Rc 'fromjson? | select(.fields.message == "consulting llm judge" and .fields.target == "nemotron")' <<<"$logs" | wc -l)
+  w=$(jq -Rc 'fromjson? | select((.fields.message // "" | startswith("judge verdict unavailable")) and .fields.judge_model == "nemotron")' <<<"$logs" | wc -l)
+  echo "$(date -u +%FT%TZ) judge=nemotron consulted=$c unavailable=$w" >> "$KEYS/judge-evidence.log"
+}
 case "${1:-}" in
   ask)
     shift; [ $# -ge 2 ] && { m=$1; shift; } || m=auto
     post "$m" "$*" false 2> >(grep -iE '^(HTTP|x-guardrail|x-switchyard|x-selected-model|x-served-by|x-pool-pick|x-pool-endpoint)' >&2) | jq -r '.model + ": " + (.choices[0].message.content // "" | .[0:160]) // .'
+    record_judge "$m"
     ;;
   stream)
     shift; [ $# -ge 2 ] && { m=$1; shift; } || m=auto
