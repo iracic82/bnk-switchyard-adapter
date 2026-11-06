@@ -69,9 +69,17 @@ so a few dozen are enough. Watch the status column:
 for i in 1 2 3; do SY_KEY=pilot sy burst 15 sy-large "Design a rate limiter for 50,000 requests per second."; done
 ```
 
-The first requests answer `200`. Once the budget is spent the gateway refuses the key. The
-gateway counts usage as requests finish, so a few may get through after the line is crossed.
-Run the loop again if every request still says `200`.
+The first requests answer `200`. Once the budget is spent the gateway refuses the key with `429`.
+The gateway counts a request's tokens when it finishes, and a burst sends fifteen at once, so
+requests already past the check still complete after the first refusals: `200` and `429` mix in
+the last burst (lines print as requests finish, not in the order sent). One request on its own
+shows where the key stands:
+
+```bash,run
+SY_KEY=pilot sy ask sy-small "hi"
+```
+
+If that still answers `200`, run the loop again.
 
 The engineering key is not affected:
 

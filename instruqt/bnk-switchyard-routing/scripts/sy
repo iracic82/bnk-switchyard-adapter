@@ -60,7 +60,11 @@ record_judge() {
 case "${1:-}" in
   ask)
     shift; [ $# -ge 2 ] && { m=$1; shift; } || m=auto
-    post "$m" "$*" false 2> >(grep -iE '^(HTTP|x-guardrail|x-switchyard|x-selected-model|x-served-by|x-pool-pick|x-pool-endpoint)' >&2) | jq -r '.model + ": " + (.choices[0].message.content // "" | .[0:160]) // .'
+    post "$m" "$*" false 2> >(grep -iE '^(HTTP|x-guardrail|x-switchyard|x-selected-model|x-served-by|x-pool-pick|x-pool-endpoint)' >&2) \
+      | jq -rRs 'if . == "" then "(no body: the gateway refused the request; see the status above)"
+                else (fromjson? // .) | if type == "object" and .choices then .model + ": " + ((.choices[0].message.content // "") | .[0:160])
+                                        elif type == "object" and .error then "refused: " + (.error.message // (.error | tostring))
+                                        else tostring end end' | head -c 400; echo
     record_judge "$m"
     ;;
   stream)
