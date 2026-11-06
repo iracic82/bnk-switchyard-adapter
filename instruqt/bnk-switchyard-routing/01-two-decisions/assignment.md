@@ -73,7 +73,8 @@ Then a hard one:
 sy ask "Find the root cause of this distributed deadlock between the queue consumer and the lock service."
 ```
 
-Each answer shows the response headers and the model that answered:
+Each answer shows the response headers and the model that answered. The answer text itself is
+simulated (no model here is real, so expect filler); the routing that produced it is real:
 
 - The `model` in the answer (`sy-small` or `sy-large`) is **the first decision**. Switchyard's
   task classifier asked a judge model (the small one) whether the small model can solve this
@@ -83,9 +84,10 @@ Each answer shows the response headers and the model that answered:
   The large pool runs llm-d's vLLM simulator, which sends no `x-served-by` and answers with
   filler text; `x-pool-endpoint` still names its pod.
 
-The mock judge looks for words like "distributed" or "root cause" and is wrong one time in ten
-on purpose, so a hard step now and then lands on the small model. Real judges make mistakes
-too. Lesson 4 measures what that costs.
+The judge here is a stand-in that grades each step by its wording ("distributed", "root cause"
+and the like) and is wrong one time in ten on purpose, either way: now and then an easy step
+escalates to the large model, or a hard one stays small. Send the same step again and it usually
+lands where you expect. Real judges make mistakes too; lessons 4 and 5 measure what they cost.
 
 Both decisions are in the router's log. Each request leaves two lines: `ext_proc routed` (the
 model, and how long the decision took) and `pool bridge forwarded` (the pod, and how long the
@@ -101,8 +103,9 @@ request, live: first to Switchyard for the model, then through the pool bridge a
 the pod. Click any box to see what it is and the command that shows it. The buttons at the top
 send requests too.
 
-Open the **Switchyard live view** tab and send a few more requests. Each row is one decision:
-the prompt, the model chosen, and how long the judge took.
+Open the **Switchyard live view** tab and send a few more requests. Each row is one request: the
+prompt, the model Switchyard chose with the judge's `p_solve` (its estimate that the small model
+can do the step), how long the decision took, and the pod F5's picker chose.
 
 Click **Check** once both models have answered an `auto` request.
 
