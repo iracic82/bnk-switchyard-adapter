@@ -3,7 +3,8 @@
 # the lab VM after instruqt-kind-layer.sh (and instruqt-dynamo-layer.sh, which rewrites the router config).
 #
 #   LLM_API_KEY   an NVIDIA API key (nvapi-...). Anything else, or a key the API refuses, leaves the
-#                 lab on its stand-in judge, and says so.
+#                 lab on its stand-in judge, and says so. The learner can read it (root on the VM,
+#                 cluster access): use a key made for the track, with a small quota.
 #   JUDGE_MODEL   default nvidia/nemotron-3.5-lightning-30b-a3b
 #
 # What it adds: Secret f5-bnk/switchyard-judge with the key, the router's NVIDIA_API_KEY from it, and
@@ -39,9 +40,12 @@ probe=$(jq -n --arg m "$JUDGE_MODEL" '{
       primary_rule: {type: "string", enum: ["SUP-1", "SUP-2", "SUP-3", "SUP-4", "SUP-5", "UNC-1", "UNC-2", "LIM-1", "LIM-2", "none"]},
       capability_boundary: {type: "string", enum: ["supported", "uncertain", "unsupported", "unmatched"]},
       p_solve: {type: "number", minimum: 0, maximum: 1}}}}}}')
+# The key goes to curl and kubectl on stdin or from a 0600 file, never on a command line (ps shows those).
+umask 077; HDR=$(mktemp); trap 'rm -f "$HDR"' EXIT
+printf 'Authorization: Bearer %s\n' "$KEY" > "$HDR"
 t0=$(date +%s%N)
 code=$(curl -sS -m 30 -o /tmp/judge-probe.json -w '%{http_code}' "$API/chat/completions" \
-  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d "$probe" 2>/dev/null || echo 000)
+  -H @"$HDR" -H 'Content-Type: application/json' -d "$probe" 2>/dev/null || echo 000)
 ms=$(( ($(date +%s%N) - t0) / 1000000 ))
 verdict=$(jq -r '.choices[0].message.content // empty' /tmp/judge-probe.json 2>/dev/null)
 if [ "$code" != 200 ] || ! echo "$verdict" | jq -e '.p_solve | numbers' >/dev/null 2>&1; then
@@ -53,7 +57,9 @@ rm -f /tmp/judge-probe.json
 ok "Nemotron answered a verdict in ${ms} ms: $verdict"
 
 # the key reaches the router as an environment variable from a Secret, never through the ConfigMap
-kubectl -n $NS create secret generic switchyard-judge --from-literal=NVIDIA_API_KEY="$KEY" \
+# Anyone with this cluster's credentials can read it, as with any Secret: on a lab that is the learner.
+# Give the track a key of its own with a small quota, not a personal or production one.
+printf '%s' "$KEY" | kubectl -n $NS create secret generic switchyard-judge --from-file=NVIDIA_API_KEY=/dev/stdin \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null || fail "Secret switchyard-judge"
 kubectl -n $NS set env deploy/switchyard-router --from=secret/switchyard-judge >/dev/null || fail "router env"
 
