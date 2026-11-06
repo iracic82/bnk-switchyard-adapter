@@ -70,6 +70,8 @@ kubectl -n aigw-models get pods -l app=small-model -o wide
 3. `sy-small`'s provider is the pool bridge, `/pools/small/v1` on the same router.
 4. The InferencePool `small-pool` selects the `small-model` pods and names its endpoint picker,
    `small-pool-epp`, with `failureMode: FailOpen`.
+5. The pods normally run on `bnk-worker` and `bnk-worker2`, the nodes that report four simulated H100s
+   each. The **Topology** tab draws them with their GPUs.
 
 Now send twelve requests to `sy-small` at once. Each line shows the status, the pod that
 answered, how it was chosen and the pod address:
@@ -87,6 +89,10 @@ pick and how long it took:
 kubectl -n f5-bnk logs deploy/switchyard-router --since=2m | grep 'pool bridge forwarded' \
   | jq -r '.fields | "\(.pool)  \(.pick)  \(.endpoint)  pick \(.pick_ms) ms, model \(.upstream_ms) ms"' | tail -12
 ```
+
+In the **Switchyard live view** these twelve rows say "model named directly" and "no decision
+needed": a request that names `sy-small` skips the first decision, because there is no model to
+choose. The second decision still happens on every one of them, and the row shows the pod.
 
 The pick takes a few milliseconds. The model takes hundreds. If the picker did not answer
 within 500 ms, the bridge would send the request to the pool's Service instead and mark it
