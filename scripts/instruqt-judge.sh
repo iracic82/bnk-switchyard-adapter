@@ -6,6 +6,7 @@
 #                 the judge proxy (deploy/judge-proxy): the NVIDIA key stays in AWS. Setup mints a token
 #                 for this sandbox only (8 hours, 1,500 calls), signed with the key, and forgets the key;
 #                 the learner can read the token, not the NVIDIA key. Preferred.
+#   JUDGE_PROXY_TOKEN  or a token minted elsewhere, with JUDGE_PROXY_URL
 #   LLM_API_KEY   or an NVIDIA API key (nvapi-...) used directly; the learner can read it. Internal use.
 #   JUDGE_MODEL   default nvidia/nemotron-3.5-lightning-30b-a3b
 # Anything else, or an API that refuses, leaves the lab on its stand-in judge, and says so.
@@ -21,7 +22,11 @@ source "$LAB_ROOT/install/lib/common.sh"
 NS=f5-bnk; CM=switchyard-router-config
 JUDGE_MODEL=${JUDGE_MODEL:-nvidia/nemotron-3.5-lightning-30b-a3b}
 step "Judge: NVIDIA Nemotron on NVIDIA's API ($JUDGE_MODEL)"
-if [ -n "${JUDGE_PROXY_URL:-}" ] && [ -n "${JUDGE_PROXY_SIGNING_KEY:-}" ]; then
+if [ -n "${JUDGE_PROXY_URL:-}" ] && [ -n "${JUDGE_PROXY_TOKEN:-}" ]; then
+  # a token minted elsewhere (deploy/judge-proxy/mint_token.py), for a lab started without the signing key
+  API="${JUDGE_PROXY_URL%/}/v1"; KEY=$JUDGE_PROXY_TOKEN
+  echo "   through the judge proxy, with a token minted for this lab"
+elif [ -n "${JUDGE_PROXY_URL:-}" ] && [ -n "${JUDGE_PROXY_SIGNING_KEY:-}" ]; then
   API="${JUDGE_PROXY_URL%/}/v1"
   SID="${_SANDBOX_ID:-$(hostname)-$(date +%s)}"
   KEY=$(python3 - "$SID" <<'PY'

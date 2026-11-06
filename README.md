@@ -191,7 +191,8 @@ gets 403).
 | A key whose scope lacks the model Switchyard chose | Instruqt lab | 403 from Polaris |
 | Large pool on llm-d's vLLM simulator behind the F5 EPP | Instruqt lab | verified |
 | A real judge on CPU (qwen2.5:1.5b in Ollama, 8 cores) | local | not viable: 7 to 35 s per decision, and verdicts Switchyard rejects as inconsistent |
-| NVIDIA Nemotron 3.5 Lightning as the judge, on NVIDIA's API | Instruqt lab | **set up, not yet run**: the setup probes it with Switchyard's verdict schema before switching anything |
+| NVIDIA Nemotron 3.5 Lightning as the judge, through the judge proxy | AWS proxy, Switchyard's own prompt and schema | verdicts valid, 1 to 2 s with reasoning off; with reasoning on it returns no verdict |
+| Judge proxy limits: forged or over-limit token, wrong path or model, oversized body, quota | AWS | 401, 404, 403, 413, 429 as designed |
 | Single-Gateway header-match overlay | needs a BNK cluster | **not tested** |
 | GPU, TTFT and EPP numbers on real hardware | needs GPUs | **not tested** |
 
@@ -212,11 +213,12 @@ The hairpin path (pod to a BNK VIP and back into the cluster) has worked in an e
 | 5 Tune the judge | moves the judge threshold (`sy threshold`) and sweeps it through the gateway (`--sweep`): escalations, success and cost per completed task move together |
 | 6 A Dynamo pool | NVIDIA Dynamo as a third model; F5's picker reads Dynamo's KV events and names the worker |
 
-The judge is a stand-in by default (`mock-llm` with a graded `p_solve`). When the track's
-`LLM_API_KEY` secret is an NVIDIA API key, `scripts/instruqt-judge.sh` adds a real one, NVIDIA
-Nemotron 3.5 Lightning on NVIDIA's hosted API (the key reaches the router from a Secret, through
-`api_key_env`), and `sy judge nemotron` switches Switchyard to it. Benchmarks keep the stand-in,
-because the hosted API is rate-limited.
+The judge is a stand-in by default (`mock-llm` with a graded `p_solve`). `sy judge nemotron`
+switches Switchyard to a real one: NVIDIA Nemotron 3.5 Lightning on NVIDIA's hosted API, with
+reasoning off, about 1 to 2 s per verdict. Labs never hold the NVIDIA key. They call the judge
+proxy (`deploy/judge-proxy`, an AWS Lambda), which holds the key and accepts a token that the lab's
+setup mints for its own sandbox (8 hours, 1,500 calls), within the proxy's own per-token and daily
+limits. Benchmarks keep the stand-in, because the hosted API is rate-limited.
 
 Pools: the small model is `mock-llm`, the
 large model is llm-d's vLLM simulator, and the Dynamo pool is Dynamo's Mocker on nodes that report

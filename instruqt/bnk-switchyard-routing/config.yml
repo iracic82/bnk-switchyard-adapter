@@ -27,8 +27,9 @@ virtualmachines:
     SY_REF: main
     SY_IMAGE_REPO: docker.io/iracic82
     SY_IMAGE_TAG: 0.3.6
-    # The judge Switchyard asks, when LLM_API_KEY is an NVIDIA key (scripts/instruqt-judge.sh).
+    # The judge Switchyard can ask: NVIDIA Nemotron through the judge proxy (scripts/instruqt-judge.sh).
     JUDGE_MODEL: nvidia/nemotron-3.5-lightning-30b-a3b
+    JUDGE_PROXY_URL: https://33x72uhff6vdxrquczlgvfcrt40yezmr.lambda-url.us-east-1.on.aws
 secrets:
 # Team secrets on the f5 team, write only.
 - name: FAR_PULL_B64
@@ -37,7 +38,7 @@ secrets:
   key: BNK_LICENSE_JWT
 - name: GH_READ_TOKEN
   key: GH_READ_TOKEN
-# NVIDIA API key (build.nvidia.com) for the hosted Nemotron judge. Without it, or if it does not work,
-# the lab keeps its stand-in judge.
-- name: LLM_API_KEY
-  key: LLM_API_KEY
+# Signs this lab's token for the judge proxy (deploy/judge-proxy, AWS), which holds the NVIDIA key.
+# Setup mints the token and forgets this key. Without it the lab keeps its stand-in judge.
+- name: JUDGE_PROXY_SIGNING_KEY
+  key: JUDGE_PROXY_SIGNING_KEY

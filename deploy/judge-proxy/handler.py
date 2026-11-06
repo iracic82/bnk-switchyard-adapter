@@ -13,7 +13,8 @@ so even a leaked signing key cannot spend more than that. The upstream body is r
 allowlist of fields, with n=1 and the output capped.
 
 Environment: UPSTREAM, MODELS (comma list), MAX_TOKENS_CAP, TABLE, NVIDIA_SECRET, SIGNING_SECRET,
-MAX_CALLS (1500), MAX_HOURS (9), DAILY_CAP (20000), MAX_BODY_BYTES (65536).
+MAX_CALLS (1500), MAX_HOURS (9), DAILY_CAP (20000), MAX_BODY_BYTES (65536), and EXTRA_BODY: JSON merged
+into every upstream body, for the operator's settings only (the judge model's reasoning switch).
 """
 
 import base64
@@ -100,6 +101,7 @@ def handler(event, _context):
     asked = sent.get("max_tokens") or sent.get("max_completion_tokens") or cap
     body["max_tokens"] = max(1, min(int(asked), cap))
     body["n"] = 1
+    body.update(json.loads(os.environ.get("EXTRA_BODY") or "{}"))
     ttl = int(claims["exp"]) + 86400
     for key, limit, msg in [
         (claims["sid"], int(claims["q"]), "this lab has used its judge calls"),
