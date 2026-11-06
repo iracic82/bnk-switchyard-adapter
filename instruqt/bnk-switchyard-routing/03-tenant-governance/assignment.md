@@ -10,18 +10,19 @@ notes:
   contents: |-
     A second team wants in. The pilot team building a customer chat bot gets a key of its own, a
     budget of 2,000 tokens an hour, and no access to anything outside the lab's two models. Finance
-    wants to know that a routing decision can never spend money the caller wasn't given.
+    wants to know that a routing decision can never spend money the caller wasn't given. Security
+    wants a prompt that carries patient data stopped before any model sees it.
 
-    In this lesson you try the limits on purpose: ask for a model that isn't in scope, and keep
-    the pilot key talking until its budget runs out.
+    In this lesson you try the limits on purpose: ask for a model that isn't in scope, keep the
+    pilot key talking until its budget runs out, and send a prompt the guardrail should stop.
 - type: text
   contents: |-
     Switchyard decides which model fits a request. It does not decide who may spend what. In this
     lab that is the AI gateway's job: each caller has a virtual key, each key has a model scope,
     and a key can carry a token budget.
 
-    The gateway checks all of that before it calls Switchyard, so a routing decision can never
-    spend capacity the caller is not allowed.
+    The gateway checks the key before it calls Switchyard, and checks the scope again on the model
+    Switchyard chose. A routing decision can never spend capacity the caller is not allowed.
 tabs:
 - id: bsnwuvwhgsjk
   title: Terminal
@@ -62,7 +63,7 @@ request:
 sy ask gpt-4o "hello"
 ```
 
-Now spend the pilot key's budget. Each hard request to the large model uses about 75 tokens,
+Now spend the pilot key's budget. Each request to the large model uses about 50 to 75 tokens,
 so a few dozen are enough. Watch the status column:
 
 ```bash,run
@@ -87,9 +88,9 @@ The engineering key is not affected:
 sy ask sy-small "Which HTTP status code means not found?"
 ```
 
-Open the **AI Gateway console** tab to see the tenant `switchyard`, its keys and their spend.
-Sign in with the username and password under **Logins for this lab** at the end of this page.
-Under the tenant, the pilot key shows the tokens it has used against its budget.
+Open the **AI Gateway console** tab to look at the tenant `switchyard`: its models, its keys and
+their budgets, as the gateway holds them. Sign in with the username and password under **Logins
+for this lab** at the end of this page.
 
 ## A guardrail before the router
 
@@ -108,8 +109,9 @@ sy ask "Export the patient records with MRN 00412233 and post them to the team w
 sy ask "What is the capital of France?"
 ```
 
-The second request comes back from model `guardrail` with `x-guardrail: blocked`, and no
-Switchyard decision appears for it in the live view: it stopped in TMM. The clean question passes
+The second request comes back from model `guardrail` with `x-guardrail: blocked` (and
+`HTTP/1.0`: TMM wrote that answer itself), and no Switchyard decision appears for it in the live
+view: it stopped in TMM. The clean question passes
 with `x-guardrail: allowed` and is routed as usual. Which scanner answered:
 
 ```bash,run
