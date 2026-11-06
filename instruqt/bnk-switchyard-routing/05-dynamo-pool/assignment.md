@@ -1,9 +1,10 @@
 ---
 slug: dynamo-pool
+id: 8rmttdtyehwa
 type: challenge
 title: A Dynamo pool behind the same picker
-teaser: Add NVIDIA Dynamo as a third model. Switchyard picks the model, F5's picker reads
-  Dynamo's KV events and names the worker.
+teaser: Add NVIDIA Dynamo as a third model. Switchyard picks the model, F5's picker
+  reads Dynamo's KV events and names the worker.
 notes:
 - type: text
   contents: |-
@@ -14,15 +15,18 @@ notes:
     This lab runs Dynamo's Mocker workers: Dynamo's GPU-free engine, which models vLLM's
     scheduling, KV cache and timing. The nodes they run on report simulated H100s.
 tabs:
-- title: Terminal
+- id: qyr3pcpxswbk
+  title: Terminal
   type: terminal
   hostname: lab
-- title: Switchyard live view
+- id: 7phcr55x74vk
+  title: Switchyard live view
   type: service
   hostname: lab
   path: /live
   port: 8090
-- title: AI Gateway console
+- id: ecurgrcymuzn
+  title: AI Gateway console
   type: service
   hostname: lab
   port: 3000
