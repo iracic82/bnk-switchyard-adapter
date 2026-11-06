@@ -19,7 +19,7 @@
 #                    installs; post: the picker, the router and Polaris; unset or "all": both in order
 set -uo pipefail
 LAB_ROOT=${LAB_ROOT:-/root/lab}; SY_ROOT=${SY_ROOT:-/root/switchyard}; SECRETS_DIR=${SECRETS_DIR:-/root/.bnk}
-IMG=${SY_IMAGE_REPO:-docker.io/iracic82}; TAG=${SY_IMAGE_TAG:-0.3.6}
+IMG=${SY_IMAGE_REPO:-docker.io/iracic82}; TAG=${SY_IMAGE_TAG:-0.3.7}
 # 0.3.3 is the first router that serves the Dynamo pool: it passes the picker's worker header on, adds an
 # output limit Dynamo's Mocker needs, and takes the route header. An older tag (a lab started before it)
 # is raised.

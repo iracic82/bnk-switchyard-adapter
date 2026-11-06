@@ -503,7 +503,14 @@ async fn forward(
     let upstream_ms = started.elapsed().as_millis() as u64 - pick_ms;
     tracing::info!(pool = %pool_name, pick = how, endpoint = %endpoint, status = response.status().as_u16(),
         pick_ms, upstream_ms, %request_id, "pool bridge forwarded");
-    if let Some(live) = bridge.state.as_ref().and_then(|s| s.live.as_ref()) {
+    // Only chat requests are news: a gateway's health checks (GET, no body) go to the Service and
+    // would otherwise fill the live view with traffic nobody sent.
+    if let Some(live) = bridge
+        .state
+        .as_ref()
+        .and_then(|s| s.live.as_ref())
+        .filter(|_| how != "service")
+    {
         let model = serde_json::from_slice::<serde_json::Value>(&body)
             .ok()
             .and_then(|v| v.get("model").and_then(|m| m.as_str()).map(str::to_owned))

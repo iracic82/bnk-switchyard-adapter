@@ -128,7 +128,7 @@ def tail_router():
             if msg == "ext_proc routed":
                 HUB.publish({"kind": "model", "model": f.get("selected_model"), "gateway_model": f.get("gateway_model"),
                              "decision_ms": f.get("decision_ms")})
-            elif msg == "pool bridge forwarded":
+            elif msg == "pool bridge forwarded" and f.get("pick") != "service":  # not the gateway's health checks
                 HUB.publish({"kind": "pod", "pool": f.get("pool"), "pick": f.get("pick"), "endpoint": f.get("endpoint"),
                              "status": f.get("status"), "pick_ms": f.get("pick_ms"), "upstream_ms": f.get("upstream_ms")})
         p.wait()

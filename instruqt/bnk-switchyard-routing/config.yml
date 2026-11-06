@@ -26,7 +26,7 @@ virtualmachines:
     SY_REPO: github.com/iracic82/bnk-switchyard-adapter.git
     SY_REF: main
     SY_IMAGE_REPO: docker.io/iracic82
-    SY_IMAGE_TAG: 0.3.6
+    SY_IMAGE_TAG: 0.3.7
     # The judge Switchyard can ask: NVIDIA Nemotron through the judge proxy (scripts/instruqt-judge.sh).
     JUDGE_MODEL: nvidia/nemotron-3.5-lightning-30b-a3b
     JUDGE_PROXY_URL: https://33x72uhff6vdxrquczlgvfcrt40yezmr.lambda-url.us-east-1.on.aws
