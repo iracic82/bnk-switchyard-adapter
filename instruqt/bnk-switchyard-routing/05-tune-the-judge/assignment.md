@@ -136,6 +136,12 @@ five to seven minutes, and puts the original threshold back at the end:
 python3 $SY_ROOT/bench/polaris_bench.py --episodes 60 --sweep 0.4,0.6,0.8 --json /root/sweep.json
 ```
 
+What is real here and what is not: the routing decisions, the escalation share, the token counts
+and the judge's cost are real. Whether a task succeeds is not: no model here solves anything, so
+the bench applies fixed odds (the small model solves 30% of hard steps, the large one 90%). The
+sweep shows the shape of the trade-off under those odds; it cannot measure quality. The sweep
+also uses the stand-in judge, because the hosted one is rate-limited.
+
 Read the `to large` column first: the share of steps that escalated. It climbs with the
 threshold, and task success climbs with it.
 
