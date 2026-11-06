@@ -60,6 +60,9 @@ kubectl -n "$POOL_NS" create secret generic hf-token-secret --from-literal=HF_TO
 ok "Dynamo platform and NATS in dynamo-system"
 
 step "Dynamo: Mocker workers (DynamoGraphDeployment mocker)"
+# The GPU nodes get their label first: a preferred affinity counts only when a pod is scheduled, so a label
+# that arrives later leaves a worker wherever it first landed (the control plane, with no GPU).
+for n in bnk-worker bnk-worker2; do kubectl label node $n run.ai/simulated-gpu-node-pool=h100 --overwrite >/dev/null; done
 kubectl apply -f "$M/10-dynamo-mocker.yaml" >/dev/null || fail "DynamoGraphDeployment"
 # The workers prefer nodes that report simulated GPUs, as the other pools do (a preference: they still
 # schedule anywhere if those nodes are full). Component 1 is "decode" in the base lab's graph.
@@ -69,6 +72,12 @@ if [ "$(kubectl -n "$POOL_NS" get dynamographdeployment mocker -o jsonpath='{.sp
 fi
 kubectl -n "$POOL_NS" wait dynamographdeployment/mocker --for=condition=Ready --timeout="$(tmo 1200s 300s)" >/dev/null \
   && ok "mocker Ready: frontend and two workers" || warn "mocker not Ready yet (continuing)"
+# A worker scheduled before the patch landed may still sit on a node without GPUs: delete it, and the operator
+# recreates it on a GPU node.
+for p in $(kubectl -n "$POOL_NS" get pods -l nvidia.com/dynamo-graph-deployment-name=mocker \
+    -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.nodeName}{"\n"}{end}' | awk '$1 ~ /decode/ && $2 !~ /^bnk-worker/ {print $1}'); do
+  kubectl -n "$POOL_NS" delete pod "$p" --wait=false >/dev/null && warn "moved worker $p to a GPU node"
+done
 
 step "Dynamo: GPU simulators, fake GPU operator $FGO (4 x H100 per worker) and KAI scheduler $KAI"
 for n in bnk-worker bnk-worker2; do kubectl label node $n run.ai/simulated-gpu-node-pool=h100 --overwrite >/dev/null; done
