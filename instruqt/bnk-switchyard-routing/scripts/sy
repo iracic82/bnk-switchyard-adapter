@@ -7,6 +7,7 @@
 #   sy key [eng|pilot|dynamo]        print a virtual key
 #   sy logins                        the AI Gateway console login and every virtual key
 #   sy threshold [0..1]              show, or set, the judge threshold of Switchyard's auto routes
+#   sy judge [mock|nemotron]         show, or set, which model judges: the stand-in, or NVIDIA Nemotron
 #
 # The engineering key is used, or SY_KEY=pilot|dynamo; models sy-dynamo and auto-dynamo use the
 # dynamo key, the one whose scope includes the Dynamo pool.
@@ -27,6 +28,18 @@ post() { # model prompt stream
   [ "$m" = auto-dynamo ] && { m=auto; route=(-H "x-switchyard-use-route: auto-dynamo"); }
   docker exec -i client curl -s -m 120 "http://$VIP/v1/chat/completions" -D /dev/stderr "${route[@]}" \
     -H "Authorization: Bearer $(key "$WHO")" -H 'Content-Type: application/json' -d "$(body "$m" "$2" "$3")"
+}
+# the router's config, and applying a new one (rewrites the ConfigMap, restarts the router, waits
+# until the gateway's next request goes through)
+cfg_get() { kubectl -n f5-bnk get cm switchyard-router-config -o jsonpath='{.data.adapter\.toml}'; }
+cfg_apply() {
+  kubectl -n f5-bnk patch cm switchyard-router-config --type merge \
+    -p "$(jq -n --arg v "$1" '{data:{"adapter.toml":$v}}')" >/dev/null
+  kubectl -n f5-bnk rollout restart deploy/switchyard-router >/dev/null
+  kubectl -n f5-bnk rollout status deploy/switchyard-router --timeout=180s >/dev/null
+  for _ in $(seq 1 30); do
+    [ "$(post auto "ping" false 2>&1 >/dev/null | tr -d '\r' | awk 'tolower($1) ~ /^http/ {print $2}' | tail -1)" = 200 ] && break; sleep 2
+  done
 }
 case "${1:-}" in
   ask)
@@ -51,20 +64,25 @@ case "${1:-}" in
   key) key "${2:-eng}" ;;
   threshold)
     # Switchyard sends a step to the small model when the judge's p_solve >= the threshold.
-    get() { kubectl -n f5-bnk get cm switchyard-router-config -o jsonpath='{.data.adapter\.toml}'; }
-    cur=$(get | grep -oE 'base_threshold = [0-9.]+' | head -1 | awk '{print $3}')
+    cur=$(cfg_get | grep -oE 'base_threshold = [0-9.]+' | head -1 | awk '{print $3}')
     if [ -z "${2:-}" ]; then echo "base_threshold = $cur"; exit 0; fi
     [[ "$2" =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "threshold must be between 0 and 1"; exit 1; }
-    new=$(get | sed -E "s/base_threshold = [0-9.]+/base_threshold = $2/g")
-    kubectl -n f5-bnk patch cm switchyard-router-config --type merge \
-      -p "$(jq -n --arg v "$new" '{data:{"adapter.toml":$v}}')" >/dev/null
-    kubectl -n f5-bnk rollout restart deploy/switchyard-router >/dev/null
-    kubectl -n f5-bnk rollout status deploy/switchyard-router --timeout=180s >/dev/null
-    # the gateway reconnects to the new router on its next request; wait until one goes through
-    for _ in $(seq 1 30); do
-      [ "$(post auto "ping" false 2>&1 >/dev/null | tr -d '\r' | awk 'tolower($1) ~ /^http/ {print $2}' | tail -1)" = 200 ] && break; sleep 2
-    done
+    cfg_apply "$(cfg_get | sed -E "s/base_threshold = [0-9.]+/base_threshold = $2/g")"
     echo "base_threshold: $cur -> $2 (the router restarted with it)"
+    ;;
+  judge)
+    cur=$(cfg_get | grep -oE '^judge = "[a-z]+"' | head -1 | cut -d'"' -f2)
+    [ "$cur" = small ] && cur=mock
+    if [ -z "${2:-}" ]; then echo "judge: $cur"; exit 0; fi
+    case "$2" in
+      mock) to=small; deadline=3000 ;;
+      nemotron)
+        cfg_get | grep -q '^\[models.nemotron\]' || { echo "no Nemotron judge in this lab (needs an NVIDIA key; scripts/instruqt-judge.sh)"; exit 1; }
+        to=nemotron; deadline=8000 ;;
+      *) echo "judge must be mock or nemotron"; exit 1 ;;
+    esac
+    cfg_apply "$(cfg_get | sed -E "s/^judge = \"[a-z]+\"/judge = \"$to\"/; s/judge_deadline_ms = [0-9]+/judge_deadline_ms = $deadline/g")"
+    echo "judge: $cur -> $2 (the router restarted with it)"
     ;;
   logins)
     s() { kubectl -n f5-bnk get secret f5-aigateway-admin -o jsonpath="{.data.$1}" | base64 -d; }

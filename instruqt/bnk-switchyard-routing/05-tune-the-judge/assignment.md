@@ -77,6 +77,32 @@ At 0.8 the same step, with the same `p_solve`, escalates to `sy-large`. (The jud
 purpose one time in ten; if the answer surprises you, send it again.) Nothing changed in the gateway, the keys or the pools.
 Only the router's policy did.
 
+## Ask a real judge
+
+So far the judge was a stand-in. This lab can also ask a real one: NVIDIA Nemotron 3.5 Lightning,
+the efficient model in NVIDIA's own Switchyard benchmark, on NVIDIA's hosted API. Switchyard sends
+it the same classifier prompt and verdict schema, and decides from its `p_solve` the same way.
+Switch to it (skip this part if the command says the lab has no Nemotron judge):
+
+```bash,run
+sy judge nemotron
+sy ask "Convert 72 degrees Fahrenheit to Celsius."
+sy ask "Optimize this SQL query that scans the whole orders table."
+sy ask "Find the root cause of this distributed deadlock between the queue consumer and the lock service."
+```
+
+In the **Switchyard live view**, each decision now carries Nemotron's own `p_solve`, and the
+decision time includes a call across the internet. The model answers are still simulated; the
+judgement is not. A real judge disagrees with the stand-in on some steps, which is the point:
+the threshold you choose depends on which judge you trust.
+
+Switch back before the sweep. The hosted API is rate-limited and the sweep sends hundreds of
+judge calls (the benchmark would switch to the stand-in for you anyway):
+
+```bash,run
+sy judge mock
+```
+
 ## Sweep it
 
 Now measure the trade-off on the whole agent workload: 60 tasks, once on the small model,

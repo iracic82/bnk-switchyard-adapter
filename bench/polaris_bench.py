@@ -98,6 +98,11 @@ def set_threshold(value):
     return out.stdout.strip()
 
 
+def judge(value=None):
+    out = subprocess.run(["sy", "judge"] + ([value] if value else []), capture_output=True, text=True).stdout.strip()
+    return out.rsplit(" ", 1)[-1] if value is None and out else out
+
+
 def current_threshold():
     out = subprocess.run(["sy", "threshold"], capture_output=True, text=True).stdout
     return out.strip().rsplit(" ", 1)[-1] if out.strip() else None
@@ -126,6 +131,10 @@ def main():
     results = []
     if args.sweep:
         before = current_threshold()
+        # a hosted judge is rate-limited; a sweep sends hundreds of judge calls, so it uses the stand-in
+        judge_before = judge()
+        if judge_before == "nemotron":
+            print(f"  judge: {judge('mock')} for the sweep", flush=True)
         for m in ("sy-small", "sy-large"):
             print(f"  running {m} ...", flush=True)
             results.append(run(args.url, key, m, episodes, args))
@@ -138,6 +147,8 @@ def main():
         finally:
             if before:
                 print(f"  threshold back to {before}: {set_threshold(before)}", flush=True)
+            if judge_before == "nemotron":
+                print(f"  {judge('nemotron')}", flush=True)
     else:
         for m in args.models.split(","):
             print(f"  running {m} ...", flush=True)
