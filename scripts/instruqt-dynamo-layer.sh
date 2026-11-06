@@ -20,6 +20,9 @@
 set -uo pipefail
 LAB_ROOT=${LAB_ROOT:-/root/lab}; SY_ROOT=${SY_ROOT:-/root/switchyard}; SECRETS_DIR=${SECRETS_DIR:-/root/.bnk}
 IMG=${SY_IMAGE_REPO:-docker.io/iracic82}; TAG=${SY_IMAGE_TAG:-0.3.2}
+# the bridge passes the picker's worker header on from 0.3.2; an older tag (a lab started before it) cannot
+# serve the Dynamo pool, so it is raised
+case "$TAG" in 0.1.*|0.2.*|0.3.0|0.3.1) echo "   router tag $TAG predates the Dynamo bridge; using 0.3.2"; TAG=0.3.2 ;; esac
 export KUBECONFIG=${KUBECONFIG:-$LAB_ROOT/clab/kubeconfig}
 # shellcheck disable=SC1091
 source "$LAB_ROOT/install/lib/common.sh"
