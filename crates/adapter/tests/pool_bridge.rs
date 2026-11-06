@@ -141,6 +141,8 @@ async fn ask(bridge: SocketAddr) -> reqwest::Response {
     reqwest::Client::new()
         .post(format!("http://{bridge}/pools/small/v1/chat/completions"))
         .header("content-type", "application/json")
+        // a caller trying to choose the worker itself: must never reach a pod
+        .header("x-dynamo-worker-instance-id", "client-choice")
         .body(r#"{"model":"Qwen/Qwen3-0.6B","messages":[{"role":"user","content":"hi"}]}"#)
         .send()
         .await

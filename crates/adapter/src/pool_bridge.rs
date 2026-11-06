@@ -52,6 +52,13 @@ use crate::metrics::Metrics;
 /// The header (and `envoy.lb` metadata key) the Inference Extension defines for the pick.
 pub const DESTINATION: &str = "x-gateway-destination-endpoint";
 
+/// Routing headers only a picker may set. A client's copy is dropped on every path, so a caller
+/// cannot choose the pod or the Dynamo worker itself, picker or not.
+pub fn picker_owned(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n == DESTINATION || n.starts_with("x-dynamo-") || n.starts_with("x-gateway-")
+}
+
 /// Request headers never forwarded upstream (hop-by-hop, or recomputed).
 const HOP_BY_HOP: &[&str] = &[
     "host",
@@ -352,7 +359,7 @@ async fn forward(
         ];
         for (name, value) in &headers {
             let n = name.as_str();
-            if n == "host" || n == "x-request-id" || n == "authorization" {
+            if n == "host" || n == "x-request-id" || n == "authorization" || picker_owned(n) {
                 continue;
             }
             if let Ok(v) = value.to_str() {
@@ -416,6 +423,7 @@ async fn forward(
             .body(body);
         for (name, value) in &headers {
             if !HOP_BY_HOP.contains(&name.as_str())
+                && !picker_owned(name.as_str())
                 && !(picked && set.headers.iter().any(|(k, _)| k == name.as_str()))
             {
                 upstream = upstream.header(name, value);
