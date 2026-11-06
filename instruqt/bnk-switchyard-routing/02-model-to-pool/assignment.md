@@ -78,8 +78,10 @@ answered, how it was chosen and the pod address:
 sy burst 12 sy-small "Translate 'good morning' into Spanish."
 ```
 
-Both pods should appear. The picker reads each pod's queue and cache metrics and places each
-request; it is not round robin. The bridge logs every pick and how long it took:
+Both pods should appear, and probably in turns. That is not round robin: the picker scores each
+pod per request from its queue depth and KV-cache use, and two idle, identical pods score the
+same, so the requests alternate. When one pod is busier, it gets fewer. The bridge logs every
+pick and how long it took:
 
 ```bash,run
 kubectl -n f5-bnk logs deploy/switchyard-router --since=2m | grep 'pool bridge forwarded' \
