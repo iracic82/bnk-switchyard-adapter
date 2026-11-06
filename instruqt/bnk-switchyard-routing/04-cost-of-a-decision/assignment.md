@@ -66,18 +66,29 @@ python3 $SY_ROOT/bench/polaris_bench.py --episodes 30 --json /root/bench.json
 Read the table:
 
 - **task success**: how many tasks finished with every step right.
-- **served small/large**: where the steps went. For `auto` this is Switchyard's mix.
+- **small/large** and **to large**: where the steps went. For `auto` this is Switchyard's mix.
 - **EPP picks**: requests whose pod the F5 Endpoint Picker chose (all of them, normally).
 - **cost USD** comes from the token usage in each response. **+judge** is the judge call
   Switchyard makes for every `auto` step, estimated from its prompt size (about 1,150 tokens on
   the small model). It does not show in the response.
 - **USD/success**: total cost divided by successful tasks, the number that matters.
 
-Usually `auto` succeeds almost as often as `sy-large` and costs well under half as much per
-successful task. Where it falls short, it is the judge's mistakes: hard steps sent to the small
-model. A better judge, or a higher threshold in the router's config, trades cost for success.
+A typical run lands like this: `sy-small` is cheapest per completed task but finishes only about
+a third of them. `sy-large` finishes nine in ten. `auto` sends about a third of the steps to the
+large model, finishes about seven in ten, and costs somewhat less per completed task than
+`sy-large`, often by 15 to 30 percent.
 
-Every number here is simulated. On real GPUs the shape holds; the values will not.
+Look at **+judge** next to **cost USD** in the `auto` row. Here the judge costs almost as much as
+the answers. Every step pays for one judge call of about 1,150 tokens, and this lab's large model
+is cheap: $2 and $8 per million tokens, with short answers. Routing pays most when the model it
+routes away from is expensive, and frontier models often cost tens of dollars per million output
+tokens. Here the margin is thin, and the judge's mistakes (hard steps kept on the small model)
+cost success. Both are settings, not facts:
+lesson 5 moves the threshold, asks a real judge, and judges once per conversation instead of
+every step.
+
+Every number here is simulated. On real models the trade-off has the same parts (the judge's
+cost, its mistakes, the price gap between models); the values will be your own.
 
 Click **Check** when the run has finished.
 
