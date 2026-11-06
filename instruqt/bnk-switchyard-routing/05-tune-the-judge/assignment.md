@@ -1,9 +1,10 @@
 ---
 slug: tune-the-judge
+id: 2aqjoebc2d9p
 type: challenge
 title: Tune the judge
-teaser: One number decides how often a step escalates to the large model. Sweep it through
-  the gateway and find where cost per completed task bottoms out.
+teaser: One number decides how often a step escalates to the large model. Sweep it
+  through the gateway and find where cost per completed task bottoms out.
 notes:
 - type: text
   contents: |-
@@ -22,20 +23,24 @@ notes:
     The judge in this lab is a stand-in for a real one: it grades each step by its wording and
     is wrong about one step in ten, on purpose. The trade-off it exposes is the real one.
 tabs:
-- title: Terminal
+- id: qgzegci7bekv
+  title: Terminal
   type: terminal
   hostname: lab
-- title: Topology
+- id: ygwjfublulkf
+  title: Topology
   type: service
   hostname: lab
   path: /topology
   port: 8092
-- title: Switchyard live view
+- id: r46ppdxdd8cx
+  title: Switchyard live view
   type: service
   hostname: lab
   path: /live
   port: 8090
-- title: AI Gateway console
+- id: rbksk0iixnub
+  title: AI Gateway console
   type: service
   hostname: lab
   port: 3000
