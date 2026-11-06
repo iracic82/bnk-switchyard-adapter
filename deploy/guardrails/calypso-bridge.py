@@ -2,8 +2,9 @@
 # whole OpenAI request body as the scan input, and CalypsoAI judges a prompt wrapped in that JSON differently from
 # the prompt itself (it cleared an export of patient records it flags as plain text). So this bridge scans the text
 # inside the request: every string value, in any field (messages, tools, tool-call arguments, prompt, input), minus
-# fields that never carry prose. A body that is not JSON is scanned as it came. Everything else (fail closed,
-# project id from this pod) is unchanged.
+# short enum or identifier values and inline images. Audio or file attachments are flagged, since they cannot be
+# scanned as text. A body that is not JSON is scanned as it came. Everything else (fail closed, project id from
+# this pod) is unchanged.
 import json, os, ssl, urllib.request, urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -11,8 +12,15 @@ UPSTREAM = os.environ.get("CALYPSO_URL", "https://us1.calypsoai.app/backend/v1/s
 TOKEN = open("/secrets/api-key").read().strip()
 PROJECT = os.environ.get("CALYPSO_PROJECT_ID", "")
 CTX = ssl.create_default_context()
-# fields that never carry prose: identifiers, enums and media payloads (base64 would only drown the text)
-SKIP = {"model", "role", "type", "id", "tool_call_id", "stream", "image_url", "input_audio", "file"}
+# Keys whose value is an identifier or enum. Only a short single-token string under them is left out; a longer
+# string, an object or a list under the same key is scanned like anything else.
+ENUM_KEYS = {"model", "role", "type", "id", "tool_call_id", "name", "object", "detail", "format"}
+# Attachments that cannot be scanned as text: a request carrying one is flagged rather than half-scanned.
+OPAQUE_KEYS = {"input_audio", "file", "audio", "video"}
+
+
+class Unscannable(Exception):
+    pass
 
 
 def scan_text(raw):
@@ -24,17 +32,23 @@ def scan_text(raw):
         return raw
     parts = []
 
-    def walk(o):   # every string anywhere in the request, so no field the model reads escapes the scan
+    def walk(o, key=None):   # every string anywhere in the request, so no field the model reads escapes the scan
         if isinstance(o, str):
-            if o.strip():
-                parts.append(o)
+            if not o.strip():
+                return
+            if key in ENUM_KEYS and len(o) <= 64 and not any(c.isspace() for c in o):
+                return
+            if key == "url" and o.startswith("data:image/"):
+                return   # an inline image: base64 would only drown the text
+            parts.append(o)
         elif isinstance(o, list):
             for v in o:
-                walk(v)
+                walk(v, key)
         elif isinstance(o, dict):
             for k, v in o.items():
-                if k not in SKIP:
-                    walk(v)
+                if k in OPAQUE_KEYS and v:
+                    raise Unscannable(k)
+                walk(v, k)
 
     walk(req)
     return "\n".join(parts) or raw
@@ -66,7 +80,12 @@ class H(BaseHTTPRequestHandler):
             return self._send({"outcome": "flagged", "reason": "bad json"})
         if not isinstance(got, dict) or not isinstance(got.get("input"), str):
             return self._send({"outcome": "flagged", "reason": "expected {\"input\": str}"})
-        body = {"input": scan_text(got["input"])}
+        try:
+            body = {"input": scan_text(got["input"])}
+        except Unscannable as e:
+            return self._send({"outcome": "flagged", "reason": f"unscannable attachment ({e})"})
+        except RecursionError:
+            return self._send({"outcome": "flagged", "reason": "nested too deep"})
         if PROJECT:
             body["project_id"] = PROJECT
         req = urllib.request.Request(UPSTREAM, data=json.dumps(body).encode(), method="POST",
