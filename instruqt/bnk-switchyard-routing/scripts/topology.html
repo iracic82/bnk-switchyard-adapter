@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab topology</title>
+<style>
+:root {
+  --bg: #0f1419; --panel: #171e26; --line: #2c3845; --text: #e6edf3; --muted: #8b98a5;
+  --small: #3fb950; --large: #d29922; --dynamo: #76b900; --bnk: #e4002b; --sy: #58a6ff;
+  --open: #f0883e; --refused: #f85149;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f6f8fa; --panel: #ffffff; --line: #d0d7de; --text: #1f2328; --muted: #57606a;
+          --small: #1a7f37; --large: #9a6700; --dynamo: #4d7c0f; --sy: #0969da; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 16px;
+         border-bottom: 1px solid var(--line); }
+header h1 { font-size: 16px; margin: 0 12px 0 0; }
+header .sub { color: var(--muted); font-size: 13px; }
+button { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+         padding: 6px 10px; font: inherit; cursor: pointer; }
+button:hover { border-color: var(--sy); }
+button:disabled { opacity: .5; cursor: wait; }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 0; }
+@media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+#stage { padding: 8px; min-width: 0; }
+svg { width: 100%; height: auto; display: block; }
+aside { border-left: 1px solid var(--line); padding: 12px 16px; display: flex; flex-direction: column; gap: 14px; }
+@media (max-width: 960px) { aside { border-left: 0; border-top: 1px solid var(--line); } }
+aside h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; }
+#info p { margin: 0 0 8px; }
+pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 0;
+      white-space: pre-wrap; word-break: break-all; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+#log { list-style: none; margin: 0; padding: 0; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+       max-height: 280px; overflow-y: auto; }
+#log li { border-bottom: 1px solid var(--line); padding: 3px 0; }
+.tag { display: inline-block; min-width: 54px; }
+.box { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; cursor: pointer; }
+.box:hover, .box.sel { stroke: var(--sy); stroke-width: 2; }
+.lbl { fill: var(--text); font-size: 13px; font-weight: 600; pointer-events: none; }
+.sm { fill: var(--muted); font-size: 11px; pointer-events: none; }
+.wire { stroke: var(--line); stroke-width: 2; fill: none; }
+.wire.ask { stroke-dasharray: 5 4; }
+.wire.kv { stroke: var(--dynamo); stroke-dasharray: 2 4; opacity: .7; }
+.pod { cursor: pointer; }
+.pod rect { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; transition: stroke .3s, fill .3s; }
+.pod.hit rect { stroke-width: 3; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+#status { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>One request, two decisions</h1>
+  <span class="sub">Live from this lab: every dot is a real request through BNK. Click any box to see what it is.</span>
+  <span style="flex:1"></span>
+  <button data-send="easy">Send an easy step</button>
+  <button data-send="hard">Send a hard step</button>
+  <button data-send="dynamo" id="b-dynamo">Hard step, Dynamo</button>
+  <button data-send="burst">Burst of 8</button>
+</header>
+<main>
+  <div id="stage">
+    <svg id="svg" viewBox="0 0 1180 640" role="img" aria-label="Request path through BNK, Switchyard and the F5 pickers"></svg>
+    <div class="legend">
+      <span><i style="background:var(--small)"></i>small model</span>
+      <span><i style="background:var(--large)"></i>large model</span>
+      <span><i style="background:var(--dynamo)"></i>Dynamo pool</span>
+      <span><i style="background:var(--open)"></i>fail-open (no picker)</span>
+      <span>dashed: the bridge asks the picker which pod; dotted: Dynamo's KV events on NATS</span>
+    </div>
+  </div>
+  <aside>
+    <section id="info"></section>
+    <section>
+      <h2>Live requests</h2>
+      <ul id="log"><li style="color:var(--muted)">waiting for traffic: send one with a button above, or run <code>sy ask</code></li></ul>
+    </section>
+    <div id="status"></div>
+  </aside>
+</main>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById("svg");
+const ROWS = { small: 150, large: 330, dynamo: 510 };
+const COLORS = { small: "var(--small)", large: "var(--large)", dynamo: "var(--dynamo)" };
+const P = {                       // anchor points: centre of each box
+  client: [80, 330], polaris: [290, 330], sy: [290, 110], bridge: [520, 330],
+  epp_small: [760, ROWS.small], epp_large: [760, ROWS.large], epp_dynamo: [760, ROWS.dynamo], nats: [760, 610],
+};
+const INFO = {
+  client: ["Client", "A container on the lab's fabric, behind its router, like a real caller. <code>sy</code> sends from here with a virtual key.",
+    "sy ask \"Translate 'good morning' into Spanish.\""],
+  polaris: ["BNK AI gateway (Polaris) on TMM", "VIP 172.16.100.19. Checks the virtual key, its model scope and its token budget, asks the model router which model to use, then sends the request to that model's provider URL, which is the pool bridge.",
+    "kubectl -n f5-bnk get aigatewayprofiles,aimodels"],
+  sy: ["NVIDIA Switchyard (model router)", "Polaris calls it over ext_proc for every request. For <code>auto</code> its task classifier asks a judge model whether the small model can do the step, and rewrites the model to sy-small or sy-large (or sy-dynamo for auto-dynamo). Decision one.",
+    "kubectl -n f5-bnk logs deploy/switchyard-router --since=5m | grep 'ext_proc routed' | tail -3 | jq -c .fields"],
+  bridge: ["Pool bridge", "A Polaris provider is a URL and cannot name an InferencePool. The bridge is that URL: it asks the pool's F5 picker which pod should serve, the way TMM would, and forwards there. If the picker does not answer it fails open to the pool's Service.",
+    "kubectl -n f5-bnk logs deploy/switchyard-router --since=5m | grep 'pool bridge forwarded' | tail -3 | jq -c .fields"],
+  epp_small: ["F5 picker: small-pool-epp", "Endpoint picker for the small pool (engine vllm). Scores pods on queue depth and KV-cache use from their vLLM metrics. Decision two.",
+    "kubectl -n aigw-models get f5-epp small-pool-epp -o yaml | head -30"],
+  epp_large: ["F5 picker: large-pool-epp", "Endpoint picker for the large pool. Its pods run llm-d's vLLM simulator: a real request queue and latency that grows under load, so the picker has something to choose on.",
+    "kubectl -n aigw-models get inferencepool large-pool -o yaml | tail -12"],
+  epp_dynamo: ["F5 picker: model-pool-epp (engine dynamo)", "Reads the Dynamo workers' KV-cache events on NATS and picks the worker that already holds the prompt's prefix. It names the worker in x-dynamo-worker-instance-id; the bridge passes that on and the worker's frontend sidecar (direct mode) serves exactly that worker.",
+    "kubectl -n aigw-models get f5-epp model-pool-epp -o jsonpath='{.spec.engine} {.spec.natsURL}'"],
+  nats: ["NATS (Dynamo event plane)", "Each Dynamo worker publishes which prefix blocks it holds in KV cache. F5's picker subscribes.",
+    "kubectl -n dynamo-system get pods -l app.kubernetes.io/name=nats"],
+};
+let pods = {};   // ip -> {el, pool, name}
+let poolsUp = {};
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v);
+  (parent || svg).appendChild(e);
+  return e;
+}
+function text(x, y, s, cls, anchor) { const t = el("text", { x, y, class: cls, "text-anchor": anchor || "middle" }); t.textContent = s; return t; }
+function wire(points, cls) { return el("polyline", { points: points.map(p => p.join(",")).join(" "), class: "wire " + (cls || "") }); }
+function box(id, [cx, cy], w, h, title, sub, stroke) {
+  const g = el("g", { "data-id": id });
+  const r = el("rect", { x: cx - w / 2, y: cy - h / 2, width: w, height: h, rx: 8, class: "box" }, g);
+  if (stroke) r.style.stroke = stroke;
+  const t = el("text", { x: cx, y: cy - (sub ? 4 : -4), class: "lbl", "text-anchor": "middle" }, g); t.textContent = title;
+  if (sub) { const s = el("text", { x: cx, y: cy + 13, class: "sm", "text-anchor": "middle" }, g); s.textContent = sub; }
+  g.addEventListener("click", () => show(id, r));
+  return g;
+}
+function show(id, rect) {
+  document.querySelectorAll(".box.sel").forEach(b => b.classList.remove("sel"));
+  if (rect) rect.classList.add("sel");
+  const [title, body, cmd] = INFO[id] || [id, "", ""];
+  document.getElementById("info").innerHTML = `<h2>${title}</h2><p>${body}</p>` +
+    (cmd ? `<pre>${cmd.replace(/</g, "&lt;")}</pre><p><button id="cp">Copy command</button></p>` : "");
+  const cp = document.getElementById("cp");
+  if (cp) cp.onclick = () => navigator.clipboard && navigator.clipboard.writeText(cmd).then(() => cp.textContent = "Copied");
+}
+
+function draw(state) {
+  svg.innerHTML = "";
+  poolsUp = state.pools || {};
+  const has = p => !!poolsUp[p];
+  // wires
+  wire([P.client, P.polaris]);
+  wire([[P.polaris[0], P.polaris[1] - 40], [P.sy[0], P.sy[1] + 36]]);
+  wire([P.polaris, P.bridge]);
+  for (const pool of Object.keys(ROWS)) {
+    const e = P["epp_" + pool];
+    wire([P.bridge, [640, P.bridge[1]], [640, e[1]], [e[0] - 90, e[1]]], "ask");
+  }
+  // static boxes
+  box("client", P.client, 120, 56, "Client", "behind the fabric");
+  box("polaris", P.polaris, 200, 80, "BNK AI gateway", state.route_vip + " · key, scope, budget", "var(--bnk)");
+  box("sy", P.sy, 220, 64, "NVIDIA Switchyard", "decision 1: which model", "var(--sy)");
+  box("bridge", P.bridge, 140, 64, "Pool bridge", "Polaris provider URL");
+  text(P.sy[0] + 8, P.sy[1] + 120, "ext_proc, every request", "sm", "start");
+  // pickers and pods
+  for (const [pool, y] of Object.entries(ROWS)) {
+    const e = P["epp_" + pool], info = poolsUp[pool];
+    const g = box("epp_" + pool, e, 180, 60, info ? info.picker : (pool === "dynamo" ? "Dynamo pool" : pool + " pool"),
+      info ? "F5 picker · engine " + (info.engine || "?") : "not installed in this lab", COLORS[pool]);
+    if (!info) { g.style.opacity = .35; continue; }
+    text(e[0], y - 42, "decision 2: which pod · " + info.server, "sm");
+    info.pods.forEach((p, i) => {
+      const x = 960 + i * 120, node = (state.nodes[p.node] || {});
+      const pg = el("g", { class: "pod" });
+      wire([[e[0] + 90, y], [x - 52, y]]).style.opacity = .4;
+      const r = el("rect", { x: x - 52, y: y - 30, width: 104, height: 60, rx: 8 }, pg);
+      r.style.stroke = COLORS[pool]; r.style.opacity = p.ready ? 1 : .4;
+      const t1 = el("text", { x, y: y - 8, class: "lbl", "text-anchor": "middle" }, pg); t1.textContent = p.name.replace(/^.*-(\w{5})$/, "pod …$1");
+      const t2 = el("text", { x, y: y + 8, class: "sm", "text-anchor": "middle" }, pg); t2.textContent = p.ip || "no IP";
+      const gpu = node.gpus && node.gpus !== "0" ? `${node.gpus}× ${(node.gpu_product || "GPU").replace("NVIDIA-", "").split("-")[0]} (sim)` : p.node;
+      const t3 = el("text", { x, y: y + 22, class: "sm", "text-anchor": "middle" }, pg); t3.textContent = gpu;
+      pg.addEventListener("click", () => {
+        document.getElementById("info").innerHTML = `<h2>${p.name}</h2><p>${info.server}, pool ${pool}, on node ${p.node}` +
+          (node.gpus && node.gpus !== "0" ? ` (the fake GPU operator reports ${node.gpus} × ${node.gpu_product}; nothing runs on a GPU)` : "") +
+          `.</p><pre>kubectl -n aigw-models describe pod ${p.name} | head -25</pre>`;
+      });
+      if (p.ip) pods[p.ip] = { el: pg, pool, name: p.name, x, y };
+    });
+  }
+  if (has("dynamo")) {
+    box("nats", P.nats, 180, 44, "NATS", "Dynamo event plane");
+    const d = poolsUp.dynamo.pods;
+    d.forEach((p, i) => wire([[960 + i * 120, ROWS.dynamo + 30], [960 + i * 120, P.nats[1]], [P.nats[0] + 90, P.nats[1]]], "kv"));
+    wire([[P.nats[0], P.nats[1] - 22], [P.nats[0], ROWS.dynamo + 30]], "kv");
+  }
+  document.getElementById("b-dynamo").disabled = !has("dynamo");
+}
+
+// packets: a dot that runs through points, then calls done
+function packet(points, color, ms, done) {
+  const c = el("circle", { r: 7, fill: color, opacity: .95 });
+  const segs = []; let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const [a, b] = [points[i - 1], points[i]], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    segs.push({ a, b, len }); total += len;
+  }
+  const t0 = performance.now();
+  function step(now) {
+    let d = Math.min(1, (now - t0) / ms) * total;
+    for (const s of segs) {
+      if (d <= s.len) { const f = s.len ? d / s.len : 1; c.setAttribute("cx", s.a[0] + (s.b[0] - s.a[0]) * f); c.setAttribute("cy", s.a[1] + (s.b[1] - s.a[1]) * f); break; }
+      d -= s.len;
+    }
+    if (now - t0 < ms) requestAnimationFrame(step); else { c.remove(); done && done(); }
+  }
+  requestAnimationFrame(step);
+}
+const MODEL_POOL = { small: "small", large: "large", dynamo: "dynamo" };
+function onModel(ev) {
+  const pool = MODEL_POOL[ev.model] || "small";
+  packet([P.client, P.polaris, [P.polaris[0], P.polaris[1] - 40], [P.sy[0], P.sy[1] + 32]], "var(--sy)", 700, () =>
+    packet([[P.sy[0], P.sy[1] + 32], [P.polaris[0], P.polaris[1] - 40]], COLORS[pool], 400));
+  log(`<span class="tag" style="color:${COLORS[pool]}">model</span> ${ev.gateway_model}  judged in ${ev.decision_ms} ms`);
+}
+function onPod(ev) {
+  const pool = ev.pool, color = ev.pick === "epp" ? COLORS[pool] || "var(--sy)" : "var(--open)";
+  const e = P["epp_" + pool] || P.epp_small, pod = pods[ev.endpoint] || pods[(ev.endpoint || "").split(":")[0]];
+  const to = pod ? [pod.x - 52, pod.y] : [e[0] + 200, e[1]];
+  const go = () => packet([P.bridge, [640, P.bridge[1]], [640, e[1]], [e[0] + 90, e[1]], to], color, 900, () => {
+    if (pod) { pod.el.classList.add("hit"); setTimeout(() => pod.el.classList.remove("hit"), 900); }
+  });
+  if (ev.pick === "epp") packet([P.bridge, [640, P.bridge[1]], [640, e[1]], [e[0] - 90, e[1]]], color, 450, go);
+  else packet([P.polaris, P.bridge], color, 300, go);
+  const name = pod ? pod.name.replace(/^.*-(\w{5})$/, "…$1") : ev.endpoint;
+  log(`<span class="tag" style="color:${color}">pod</span> ${pool} → ${name}  ${ev.pick === "epp" ? "picked in " + ev.pick_ms + " ms" : ev.pick}  ${ev.status}  ${ev.upstream_ms} ms`);
+}
+let first = true;
+function log(html) {
+  const ul = document.getElementById("log");
+  if (first) { ul.innerHTML = ""; first = false; }
+  const li = document.createElement("li"); li.innerHTML = `${new Date().toLocaleTimeString()}  ${html}`;
+  ul.prepend(li); while (ul.children.length > 60) ul.lastChild.remove();
+}
+
+async function refresh() {
+  try { const s = await (await fetch("api/state")).json(); pods = {}; draw(s); document.getElementById("status").textContent = "state refreshed " + new Date().toLocaleTimeString(); }
+  catch (e) { document.getElementById("status").textContent = "cannot read the cluster state: " + e; }
+}
+document.querySelectorAll("[data-send]").forEach(b => b.addEventListener("click", async () => {
+  b.disabled = true;
+  try {
+    const r = await fetch("api/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: b.dataset.send }) });
+    if (r.status === 429) log("a request is still running; try again in a moment");
+  } finally { setTimeout(() => { b.disabled = b.id === "b-dynamo" && !poolsUp.dynamo; }, 1500); }
+}));
+const es = new EventSource("api/events");
+es.onmessage = m => { const ev = JSON.parse(m.data); ev.kind === "model" ? onModel(ev) : onPod(ev); };
+refresh(); setInterval(refresh, 15000);
+show("polaris");
+</script>
+</body>
+</html>

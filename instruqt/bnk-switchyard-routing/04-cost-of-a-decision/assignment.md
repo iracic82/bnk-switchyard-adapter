@@ -8,6 +8,13 @@ teaser: Run one agent workload three ways (small only, large only, Switchyard) a
 notes:
 - type: text
   contents: |-
+    The CFO's question arrives on a Friday: "Is the router worth it, or should we just buy more
+    GPUs?" Opinions won't answer that. Numbers will.
+
+    Run the same agent workload three ways through the gateway: always small, always large, and
+    Switchyard deciding. Then compare what each one costs per task that actually succeeded.
+- type: text
+  contents: |-
     Pin every agent step to the large model and tasks succeed, at the large model's price. Pin them
     to the small model and they are cheap, and the hard steps fail. Switchyard sits between the two.
     It also costs something: a judge call before every step.
@@ -18,6 +25,11 @@ tabs:
   title: Terminal
   type: terminal
   hostname: lab
+- title: Topology
+  type: service
+  hostname: lab
+  path: /topology
+  port: 8092
 - id: wqljnemskesi
   title: Switchyard live view
   type: service
@@ -67,3 +79,22 @@ model. A better judge, or a higher threshold in the router's config, trades cost
 Every number here is simulated. On real GPUs the shape holds; the values will not.
 
 Click **Check** when the run has finished.
+
+## Logins for this lab
+
+The **AI Gateway console** tab asks for these:
+
+```text
+[[ Instruqt-Var key="AIGW_USER" hostname="lab" ]]
+```
+
+```text
+[[ Instruqt-Var key="AIGW_PASSWORD" hostname="lab" ]]
+```
+
+The `sy` helper picks the right virtual key for you. To call the gateway yourself, this is the
+engineering key (model scope `sy-small`, `sy-large`):
+
+```text
+[[ Instruqt-Var key="SY_ENG_KEY" hostname="lab" ]]
+```

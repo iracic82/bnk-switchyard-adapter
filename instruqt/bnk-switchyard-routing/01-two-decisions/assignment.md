@@ -8,6 +8,16 @@ teaser: Switchyard picks the model. The F5 Endpoint Picker picks the replica. Wa
 notes:
 - type: text
   contents: |-
+    Kestrel Freight runs a fleet of AI agents: they plan routes, read customs forms, answer
+    drivers and fix their own tool calls. Last month the platform team pinned every agent to the
+    biggest model they had. The agents got things right. The GPU bill tripled.
+
+    Most of what an agent does is small. "Format this as JSON." "Which status code means not
+    found?" A 0.6B model handles that. A few steps need the big one. Your job today is to put each
+    step on the model it needs, on the BIG-IP Next for Kubernetes cluster the platform team already
+    runs, without changing a line of agent code.
+- type: text
+  contents: |-
     Every request an agent sends needs two answers. Which model should do this work? And which copy
     of that model, on which GPU, should take it right now?
 
@@ -21,6 +31,11 @@ tabs:
   title: Terminal
   type: terminal
   hostname: lab
+- title: Topology
+  type: service
+  hostname: lab
+  path: /topology
+  port: 8092
 - id: wtomcyysrnwj
   title: Switchyard live view
   type: service
@@ -76,7 +91,31 @@ kubectl -n f5-bnk logs deploy/switchyard-router --since=5m \
   | grep -E 'ext_proc routed|pool bridge forwarded' | tail -4 | jq -c '.fields'
 ```
 
+Open the **Topology** tab. It draws this lab's request path and moves a dot along it for every
+request, live: first to Switchyard for the model, then through the pool bridge and the picker to
+the pod. Click any box to see what it is and the command that shows it. The buttons at the top
+send requests too.
+
 Open the **Switchyard live view** tab and send a few more requests. Each row is one decision:
 the prompt, the model chosen, and how long the judge took.
 
 Click **Check** once both models have answered an `auto` request.
+
+## Logins for this lab
+
+The **AI Gateway console** tab asks for these:
+
+```text
+[[ Instruqt-Var key="AIGW_USER" hostname="lab" ]]
+```
+
+```text
+[[ Instruqt-Var key="AIGW_PASSWORD" hostname="lab" ]]
+```
+
+The `sy` helper picks the right virtual key for you. To call the gateway yourself, this is the
+engineering key (model scope `sy-small`, `sy-large`):
+
+```text
+[[ Instruqt-Var key="SY_ENG_KEY" hostname="lab" ]]
+```

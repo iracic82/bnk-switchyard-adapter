@@ -8,6 +8,14 @@ teaser: Add NVIDIA Dynamo as a third model. Switchyard picks the model, F5's pic
 notes:
 - type: text
   contents: |-
+    Kestrel's inference team has moved its frontier model to NVIDIA Dynamo. Dynamo brings its own
+    frontend, its own KV-aware router and an event plane, and the team wants to keep all of it.
+    The platform team wants one gateway, one set of keys and one router in front of every model.
+
+    Both can have what they want. Switchyard decides when a step deserves the Dynamo pool, and F5's
+    picker reads Dynamo's own KV-cache events to choose the worker.
+- type: text
+  contents: |-
     The small and large pools are single servers behind F5's picker. NVIDIA Dynamo is a whole
     serving stack: a frontend with its own KV-aware router, workers, and an event plane (NATS)
     on which each worker publishes which prompt prefixes it holds in KV cache.
@@ -19,6 +27,11 @@ tabs:
   title: Terminal
   type: terminal
   hostname: lab
+- title: Topology
+  type: service
+  hostname: lab
+  path: /topology
+  port: 8092
 - id: 7phcr55x74vk
   title: Switchyard live view
   type: service
@@ -91,3 +104,22 @@ kubectl -n f5-bnk logs deploy/switchyard-router --since=10m \
 
 Click **Check** when the log shows Switchyard sending a step to `sy-dynamo` and the picker
 choosing its worker.
+
+## Logins for this lab
+
+The **AI Gateway console** tab asks for these:
+
+```text
+[[ Instruqt-Var key="AIGW_USER" hostname="lab" ]]
+```
+
+```text
+[[ Instruqt-Var key="AIGW_PASSWORD" hostname="lab" ]]
+```
+
+The `sy` helper picks the right virtual key for you. To call the gateway yourself, this is the
+engineering key (model scope `sy-small`, `sy-large`):
+
+```text
+[[ Instruqt-Var key="SY_ENG_KEY" hostname="lab" ]]
+```

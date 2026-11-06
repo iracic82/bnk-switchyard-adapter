@@ -8,6 +8,14 @@ teaser: A Polaris model is a URL, not a pool. Follow one request from the AI gat
 notes:
 - type: text
   contents: |-
+    The routing works, and the first question from the GPU team is a fair one: where does the
+    request actually land? They run each model as a pool of replicas, and they care which replica
+    takes the next request, because a replica with a full queue makes everyone wait.
+
+    Follow one request from the gateway's address down to the pod, and watch F5's picker spread a
+    burst of them.
+- type: text
+  contents: |-
     The AI gateway (Polaris) knows models by name, and each model points at a provider, which is a
     URL. An InferencePool is not a URL: it is a set of pods plus an endpoint picker that chooses
     between them, and BNK's data plane consults that picker when an HTTPRoute sends traffic to the
@@ -21,6 +29,11 @@ tabs:
   title: Terminal
   type: terminal
   hostname: lab
+- title: Topology
+  type: service
+  hostname: lab
+  path: /topology
+  port: 8092
 - id: ckrd7azwd8fy
   title: Switchyard live view
   type: service
@@ -77,3 +90,22 @@ within 500 ms, the bridge would send the request to the pool's Service instead a
 `fail-open`, as the pool's `FailOpen` mode asks.
 
 Click **Check** once the small pool has served requests on two different pods.
+
+## Logins for this lab
+
+The **AI Gateway console** tab asks for these:
+
+```text
+[[ Instruqt-Var key="AIGW_USER" hostname="lab" ]]
+```
+
+```text
+[[ Instruqt-Var key="AIGW_PASSWORD" hostname="lab" ]]
+```
+
+The `sy` helper picks the right virtual key for you. To call the gateway yourself, this is the
+engineering key (model scope `sy-small`, `sy-large`):
+
+```text
+[[ Instruqt-Var key="SY_ENG_KEY" hostname="lab" ]]
+```

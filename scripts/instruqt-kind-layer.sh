@@ -80,7 +80,8 @@ kubectl -n $NS wait --for=condition=Ready pod/f5-aigateway-clickhouse-0 --timeou
 kubectl -n $NS rollout restart deploy/f5-cne-controller >/dev/null 2>&1 || true
 kubectl -n $NS rollout status deploy/f5-cne-controller --timeout=300s >/dev/null 2>&1 || true
 ok "AIGateway Reconciled"
-expose_service polaris $NS f5-aigateway-console 3000
+# the UIs are tabs: they listen on every address even when this layer is rerun by hand (no LAB_PUBLIC)
+LAB_PUBLIC=1 expose_service polaris $NS f5-aigateway-console 3000
 LAB_PUBLIC=0 expose_service aigw-api $NS f5-cne-controller-api 18443
 API=http://127.0.0.1:18443
 for _ in $(seq 1 60); do curl -fsS -o /dev/null "$API/api/v1/admin/ready" && break; sleep 3; done
@@ -202,6 +203,6 @@ ok "auto answered 200 through Polaris + Switchyard; upstream path: $(cat "$SECRE
 unset TOK
 
 step "Switchyard: live view on port 8090, helper command"
-expose_service switchyard-live $NS switchyard-router 8090 8080
+LAB_PUBLIC=1 expose_service switchyard-live $NS switchyard-router 8090 8080
 install -m 0755 "$SY_ROOT/instruqt/bnk-switchyard-routing/scripts/sy" /usr/local/bin/sy
 ok "live view on :8090, 'sy' helper installed"
