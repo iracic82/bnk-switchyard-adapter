@@ -85,10 +85,10 @@ pub async fn serve(
         });
     }
     if let Some(cfg) = &config.pool_bridge {
-        let bridge = Arc::new(pool_bridge::Bridge::new(
-            cfg,
-            Arc::clone(&state.engine.metrics),
-        )?);
+        let bridge = Arc::new(
+            pool_bridge::Bridge::new(cfg, Arc::clone(&state.engine.metrics))?
+                .with_live(Arc::clone(&state)),
+        );
         let app = bridge.router(config.server.max_body_bytes);
         let bridge_listener = TcpListener::bind(&cfg.listen).await?;
         tracing::info!(addr = %cfg.listen, pools = ?pool_bridge::describe(cfg), "pool bridge listening");

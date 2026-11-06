@@ -35,7 +35,9 @@ pub struct LiveEvent {
     pub pool: String,
     /// The endpoint that answered, as reported by the model server.
     pub served_by: String,
-    /// ok, stream_error, cancelled or refused.
+    /// ok, stream_error, cancelled or refused; "routed" for an ext_proc decision; "picked" for
+    /// a pool bridge pick (pool, `served_by` = endpoint, `reason` = epp or fail-open,
+    /// `decision_ms` = pick time, `e2e_ms` = upstream time to headers).
     pub status: String,
     /// Refusal reason, or "degraded" when a tier was substituted by policy.
     pub reason: String,

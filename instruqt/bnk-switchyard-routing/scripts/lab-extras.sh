@@ -11,6 +11,8 @@ HERE="$SY_ROOT/instruqt/bnk-switchyard-routing/scripts"
 # Runtime variables can be set only from lifecycle scripts (setup-lab, a challenge's setup-lab).
 AGENT=$(command -v agent || true)
 [ -n "$AGENT" ] || { [ -x /opt/instruqt/bin/agent ] && AGENT=/opt/instruqt/bin/agent; }
+# outside a lifecycle script (a learner's terminal) the agent has no token and cannot set variables
+[ -n "${INSTRUQT_AUTH_TOKEN:-}" ] || AGENT=""
 if [ -n "$AGENT" ]; then
   u=$(kubectl -n f5-bnk get secret f5-aigateway-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d)
   p=$(kubectl -n f5-bnk get secret f5-aigateway-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
@@ -21,7 +23,7 @@ if [ -n "$AGENT" ]; then
     [ -s "$f" ] && "$AGENT" variable set "SY_$(echo "$k" | tr a-z A-Z)_KEY" "$(cat "$f")"
   done
 else
-  echo "!! no Instruqt agent binary here: the assignments cannot show the logins (sy logins prints them)"
+  echo "   logins not stored for the assignments from here (only setup scripts can); sy logins prints them"
 fi
 
 # the sy helper (sy logins, auto-dynamo) at the version of this checkout

@@ -83,6 +83,8 @@ pub struct Bridge {
     pick_timeout: Duration,
     http: reqwest::Client,
     metrics: Arc<Metrics>,
+    /// For the live view: every pick is published as a "picked" event.
+    state: Option<Arc<crate::http::AppState>>,
 }
 
 /// What the picker decided.
@@ -119,7 +121,14 @@ impl Bridge {
             pick_timeout: Duration::from_millis(config.pick_timeout_ms),
             http,
             metrics,
+            state: None,
         })
+    }
+
+    /// Publishes each pick to the live view of `state`, when the live view is on.
+    pub fn with_live(mut self, state: Arc<crate::http::AppState>) -> Self {
+        self.state = Some(state);
+        self
     }
 
     pub fn router(self: Arc<Self>, max_body_bytes: usize) -> Router {
@@ -491,8 +500,26 @@ async fn forward(
         .with_label_values(&[&pool_name, how])
         .inc();
     let endpoint = target.trim_start_matches("http://").to_string();
+    let upstream_ms = started.elapsed().as_millis() as u64 - pick_ms;
     tracing::info!(pool = %pool_name, pick = how, endpoint = %endpoint, status = response.status().as_u16(),
-        pick_ms, upstream_ms = started.elapsed().as_millis() as u64 - pick_ms, %request_id, "pool bridge forwarded");
+        pick_ms, upstream_ms, %request_id, "pool bridge forwarded");
+    if let Some(live) = bridge.state.as_ref().and_then(|s| s.live.as_ref()) {
+        let model = serde_json::from_slice::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("model").and_then(|m| m.as_str()).map(str::to_owned))
+            .unwrap_or_default();
+        live.publish(crate::live::LiveEvent {
+            request_id: request_id.clone(),
+            pool: pool_name.clone(),
+            provider_model: model,
+            served_by: endpoint.clone(),
+            status: "picked".into(),
+            reason: how.into(),
+            decision_ms: pick_ms,
+            e2e_ms: upstream_ms,
+            ..Default::default()
+        });
+    }
     if let Some(s) = &stream {
         s.response_started(response.status().as_u16());
     }

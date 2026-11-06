@@ -104,7 +104,7 @@ function render() {
   $("k-small").textContent = state.served ? Math.round(100 * state.small / state.served) + "%" : "–";
   $("k-spend").textContent = usd(state.spend);
   $("k-sel").textContent = `incl. ${usd(state.sel)} for selection`;
-  $("k-front").textContent = usd(state.front);
+  $("k-front").textContent = state.front > 0 ? usd(state.front) : "–";
   $("k-saved").textContent = state.front > 0 ? `${Math.round(100 * (1 - state.spend / state.front))}% less with Switchyard`
     : state.gateway ? "tokens and cost are metered by BNK's AI gateway" : "–";
   const d = p50(state.dec), t = p50(state.ttft);
@@ -116,9 +116,33 @@ function render() {
   } else bars($("pods"), state.pods, p => p.startsWith("small") ? "var(--small)" : p.startsWith("large") ? "var(--large)" : "var(--accent)");
 }
 
+// A pool bridge pick: the F5 picker chose this pod. It belongs to the newest Switchyard decision for
+// the same pool that has no pod yet; a model asked for by name had no decision and gets its own row.
+const waiting = [];
+function picked(e) {
+  const pod = `${e.pool} · ${e.served_by}`;
+  state.pods[pod] = (state.pods[pod] || 0) + 1;
+  const how = e.reason === "epp" ? `F5 picker, ${e.decision_ms} ms` : esc(e.reason);
+  const html = `${esc(e.served_by)}<div class="why">${how}</div>`;
+  const i = waiting.findIndex(w => w.model === e.pool && e.ts_ms - w.ts < 30000);
+  if (i >= 0) { waiting[i].cell.innerHTML = `${esc(waiting[i].pool)} → ` + html; waiting.splice(i, 1); return; }
+  state.req++; state.served++;
+  if (e.pool === "small") state.small++;
+  state.models[e.pool] = (state.models[e.pool] || 0) + 1;
+  const row = document.createElement("tr");
+  if (Date.now() - opened > 1500) row.className = "new";
+  row.innerHTML = `<td class="muted">${new Date(e.ts_ms).toLocaleTimeString()}</td><td class="muted">–</td>` +
+    `<td class="prompt"><span class="muted">model named directly: ${esc(e.provider_model)}</span></td>` +
+    `<td><span class="badge ${e.pool === "small" ? "b-small" : e.pool === "large" ? "b-large" : "b-other"}">${esc(e.pool)}</span><div class="why">no decision needed</div></td>` +
+    `<td>${esc(e.pool)} → ${html}</td><td>–</td><td>–</td><td><span class="muted">in gateway</span></td><td>–</td>`;
+  $("feed").prepend(row);
+  while ($("feed").rows.length > 60) $("feed").deleteRow(-1);
+}
+
 // Events that arrive with the page load are history, not news: no highlight for them.
 const opened = Date.now();
 function add(e) {
+  if (e.status === "picked") return picked(e);
   state.req++;
   const refused = e.status === "refused";
   // ext_proc mode: the adapter decided and the gateway carried the answer, so tokens, cost and
@@ -159,6 +183,10 @@ function add(e) {
     `<td>${e.ttft_ms != null ? e.ttft_ms + " ms" : "–"}</td>` +
     `<td>${refused || viaGateway ? `<span class="muted">${viaGateway ? "in gateway" : "–"}</span>` : e.input_tokens + " / " + e.output_tokens}</td>` +
     `<td>${refused ? "–" : usd(e.selection_cost_usd + e.inference_cost_usd)}${viaGateway ? `<div class="why">selection only</div>` : ""}</td>`;
+  if (viaGateway) {
+    waiting.unshift({ model: e.model, pool: e.pool, ts: e.ts_ms, cell: row.cells[4] });
+    waiting.length = Math.min(waiting.length, 50);
+  }
   const feed = $("feed");
   feed.prepend(row);
   while (feed.rows.length > 60) feed.deleteRow(-1);
