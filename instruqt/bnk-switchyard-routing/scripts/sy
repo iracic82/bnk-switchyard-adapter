@@ -52,7 +52,7 @@ record_judge() {
   case "$1" in auto|auto-dynamo) ;; *) return 0 ;; esac
   cfg_get 2>/dev/null | grep -q '^judge = "nemotron"' || return 0
   local logs c w
-  logs=$(kubectl -n f5-bnk logs deploy/switchyard-router --since=60s 2>/dev/null)
+  logs=$(kubectl -n f5-bnk logs -l app=switchyard-router --since=60s --tail=-1 2>/dev/null)   # every router pod: one may be on its way out after a restart
   c=$(jq -Rc 'fromjson? | select(.fields.message == "consulting llm judge" and .fields.target == "nemotron")' <<<"$logs" | wc -l)
   w=$(jq -Rc 'fromjson? | select((.fields.message // "" | startswith("judge verdict unavailable")) and .fields.judge_model == "nemotron")' <<<"$logs" | wc -l)
   echo "$(date -u +%FT%TZ) judge=nemotron consulted=$c unavailable=$w" >> "$KEYS/judge-evidence.log"
