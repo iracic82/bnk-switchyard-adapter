@@ -27,7 +27,8 @@ tabs:
   title: Terminal
   type: terminal
   hostname: lab
-- title: Topology
+- id: fjvvazyuyx7x
+  title: Topology
   type: service
   hostname: lab
   path: /topology
@@ -77,8 +78,10 @@ sy ask sy-dynamo "Summarize this support ticket in one sentence: customer cannot
 `x-pool-pick: epp` says F5's picker chose, and `x-pool-endpoint` is the worker pod's address.
 The answer is Mocker text: Dynamo's engine is simulated, its routing is not.
 
-Now let Switchyard decide. Model `auto-dynamo` runs the same judge as `auto`, with the Dynamo
-pool as the capable model:
+Now let Switchyard decide. The gateway hands only model `auto` to Switchyard, so the request
+asks for `auto` and names a Switchyard route in a header, `x-switchyard-use-route: auto-dynamo`.
+That route runs the same judge as `auto`, with the Dynamo pool as the capable model. `sy`
+adds the header when you ask for `auto-dynamo`:
 
 ```bash,run
 sy ask auto-dynamo "Translate 'good morning' into Spanish."

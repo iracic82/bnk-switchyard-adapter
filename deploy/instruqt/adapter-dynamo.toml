@@ -8,6 +8,8 @@
 epp = "http://model-pool-epp.__POOL_NS__.svc.cluster.local:9002"
 # Dynamo's own frontend and KV router, if the picker does not answer.
 fallback_url = "http://mocker-frontend.__POOL_NS__.svc.cluster.local:8000"
+# Dynamo's Mocker refuses a request without an output limit; agents often send none.
+default_max_tokens = 256
 
 [models.dynamo]
 provider_model = "Qwen/Qwen3-0.6B"

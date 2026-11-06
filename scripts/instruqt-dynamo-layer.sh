@@ -19,10 +19,11 @@
 #                    installs; post: the picker, the router and Polaris; unset or "all": both in order
 set -uo pipefail
 LAB_ROOT=${LAB_ROOT:-/root/lab}; SY_ROOT=${SY_ROOT:-/root/switchyard}; SECRETS_DIR=${SECRETS_DIR:-/root/.bnk}
-IMG=${SY_IMAGE_REPO:-docker.io/iracic82}; TAG=${SY_IMAGE_TAG:-0.3.2}
-# the bridge passes the picker's worker header on from 0.3.2; an older tag (a lab started before it) cannot
-# serve the Dynamo pool, so it is raised
-case "$TAG" in 0.1.*|0.2.*|0.3.0|0.3.1) echo "   router tag $TAG predates the Dynamo bridge; using 0.3.2"; TAG=0.3.2 ;; esac
+IMG=${SY_IMAGE_REPO:-docker.io/iracic82}; TAG=${SY_IMAGE_TAG:-0.3.3}
+# 0.3.3 is the first router that serves the Dynamo pool: it passes the picker's worker header on, adds an
+# output limit Dynamo's Mocker needs, and takes the route header. An older tag (a lab started before it)
+# is raised.
+case "$TAG" in 0.1.*|0.2.*|0.3.0|0.3.1|0.3.2) echo "   router tag $TAG predates the Dynamo bridge; using 0.3.3"; TAG=0.3.3 ;; esac
 export KUBECONFIG=${KUBECONFIG:-$LAB_ROOT/clab/kubeconfig}
 # shellcheck disable=SC1091
 source "$LAB_ROOT/install/lib/common.sh"
@@ -90,7 +91,7 @@ kubectl kustomize "$SY_ROOT/deploy/k8s/base" | python3 "$SY_ROOT/scripts/render_
   --small-vip "$SMALL_VIP" --large-vip "$LARGE_VIP" --gateway-infra f5-bnkgateway --part-of switchyard-lab \
   --adapter-config "$CFG" --kinds ConfigMap | kubectl apply -f - >/dev/null || fail "router config"
 rm -f "$CFG"
-# the bridge passes the picker's headers on from 0.3.2; Dynamo's direct-mode sidecar needs them
+# the router serves the Dynamo pool from 0.3.3 (see the tag check at the top)
 kubectl -n $NS set image deploy/switchyard-router "adapter=$IMG/bnk-switchyard-adapter:$TAG" >/dev/null
 kubectl -n $NS rollout restart deploy/switchyard-router >/dev/null
 kubectl -n $NS rollout status deploy/switchyard-router --timeout=300s >/dev/null || fail "router not ready with the Dynamo config"
@@ -150,9 +151,11 @@ ok "model sy-dynamo on the pool bridge; key in $SECRETS_DIR/aigw/$KN.key (sy key
 
 step "Dynamo: end-to-end check from the client"
 DK=$(cat "$SECRETS_DIR/aigw/$KN.key"); OUT=/tmp/sy-dynamo-check.json
-ask() { docker exec client curl -s -m 60 -o /dev/stdout -D /tmp/sy-dynamo-headers -w '\n%{http_code}' "http://$ROUTE_VIP/v1/chat/completions" \
-          -H "Authorization: Bearer $DK" -H 'Content-Type: application/json' -d "{\"model\":\"$1\",\"messages\":[{\"role\":\"user\",\"content\":\"$2\"}]}" \
-          > "$OUT" 2>/dev/null; tail -1 "$OUT"; }
+ask() { # model prompt [switchyard route]
+  docker exec client curl -s -m 60 -o /dev/stdout -w '\n%{http_code}' "http://$ROUTE_VIP/v1/chat/completions" \
+    ${3:+-H "x-switchyard-use-route: $3"} \
+    -H "Authorization: Bearer $DK" -H 'Content-Type: application/json' -d "{\"model\":\"$1\",\"messages\":[{\"role\":\"user\",\"content\":\"$2\"}]}" \
+    > "$OUT" 2>/dev/null; tail -1 "$OUT"; }
 code=000
 for _ in $(seq 1 36); do code=$(ask sy-dynamo hi); [ "$code" = 200 ] && break; sleep 5; done
 if [ "$code" != 200 ]; then
@@ -163,6 +166,6 @@ fi
 kubectl -n $NS logs deploy/switchyard-router --since=5m | grep -F '"pool bridge forwarded"' | grep -F '"pool":"dynamo"' | tail -1 | jq -c '.fields | {pick, endpoint, status}' \
   | sed 's/^/   last dynamo request: /'
 code=000
-for _ in $(seq 1 12); do code=$(ask auto-dynamo "Find the root cause of this distributed deadlock between the queue consumer and the lock service."); [ "$code" = 200 ] && break; sleep 5; done
+for _ in $(seq 1 12); do code=$(ask auto "Find the root cause of this distributed deadlock between the queue consumer and the lock service." auto-dynamo); [ "$code" = 200 ] && break; sleep 5; done
 [ "$code" = 200 ] && ok "auto-dynamo answered 200: Switchyard chose, F5's picker named the Dynamo worker" \
   || warn "auto-dynamo answered $code (sy-dynamo works; check the router log)"

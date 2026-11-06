@@ -98,7 +98,7 @@ const INFO = {
     "sy ask \"Translate 'good morning' into Spanish.\""],
   polaris: ["BNK AI gateway (Polaris) on TMM", "VIP 172.16.100.19. Checks the virtual key, its model scope and its token budget, asks the model router which model to use, then sends the request to that model's provider URL, which is the pool bridge.",
     "kubectl -n f5-bnk get aigatewayprofiles,aimodels"],
-  sy: ["NVIDIA Switchyard (model router)", "Polaris calls it over ext_proc for every request. For <code>auto</code> its task classifier asks a judge model whether the small model can do the step, and rewrites the model to sy-small or sy-large (or sy-dynamo for auto-dynamo). Decision one.",
+  sy: ["NVIDIA Switchyard (model router)", "Polaris calls it over ext_proc for every request. For <code>auto</code> its task classifier asks a judge model whether the small model can do the step, and rewrites the model to sy-small or sy-large (or sy-dynamo when the header x-switchyard-use-route names auto-dynamo). Decision one.",
     "kubectl -n f5-bnk logs deploy/switchyard-router --since=5m | grep 'ext_proc routed' | tail -3 | jq -c .fields"],
   bridge: ["Pool bridge", "A Polaris provider is a URL and cannot name an InferencePool. The bridge is that URL: it asks the pool's F5 picker which pod should serve, the way TMM would, and forwards there. If the picker does not answer it fails open to the pool's Service.",
     "kubectl -n f5-bnk logs deploy/switchyard-router --since=5m | grep 'pool bridge forwarded' | tail -3 | jq -c .fields"],

@@ -25,7 +25,8 @@ tabs:
   title: Terminal
   type: terminal
   hostname: lab
-- title: Topology
+- id: uwwjn3fdjhfr
+  title: Topology
   type: service
   hostname: lab
   path: /topology

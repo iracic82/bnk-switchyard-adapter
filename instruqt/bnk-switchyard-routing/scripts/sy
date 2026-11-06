@@ -9,6 +9,9 @@
 # The engineering key is used, or SY_KEY=pilot|dynamo; models sy-dynamo and auto-dynamo use the
 # dynamo key, the one whose scope includes the Dynamo pool.
 #
+# auto-dynamo is not a gateway model: the AI gateway hands only `auto` to Switchyard. sy sends
+# model auto with the header x-switchyard-use-route: auto-dynamo, which picks Switchyard's route.
+#
 # The client sits outside the cluster, behind the fabric's router, like a real caller.
 set -uo pipefail
 VIP=${SY_VIP:-172.16.100.19}
@@ -18,8 +21,10 @@ for a in "$@"; do case "$a" in sy-dynamo|auto-dynamo) WHO=${SY_KEY:-dynamo} ;; e
 key() { cat "$KEYS/switchyard-$1-key.key"; }
 body() { jq -nc --arg m "$1" --arg p "$2" --argjson s "${3:-false}" '{model:$m,stream:$s,messages:[{role:"user",content:$p}]}'; }
 post() { # model prompt stream
-  docker exec -i client curl -s -m 120 "http://$VIP/v1/chat/completions" -D /dev/stderr \
-    -H "Authorization: Bearer $(key "$WHO")" -H 'Content-Type: application/json' -d "$(body "$1" "$2" "$3")"
+  local m=$1 route=()
+  [ "$m" = auto-dynamo ] && { m=auto; route=(-H "x-switchyard-use-route: auto-dynamo"); }
+  docker exec -i client curl -s -m 120 "http://$VIP/v1/chat/completions" -D /dev/stderr "${route[@]}" \
+    -H "Authorization: Bearer $(key "$WHO")" -H 'Content-Type: application/json' -d "$(body "$m" "$2" "$3")"
 }
 case "${1:-}" in
   ask)
