@@ -74,8 +74,12 @@ sy ask "Optimize this SQL query that scans the whole orders table."
 ```
 
 At 0.8 the same step, with the same `p_solve`, escalates to `sy-large`. (The judge is wrong on
-purpose one time in ten; if the answer surprises you, send it again.) Nothing changed in the gateway, the keys or the pools.
-Only the router's policy did.
+purpose one time in ten; if the answer surprises you, send it again.) Nothing changed in the
+gateway, the keys or the pools. Only the router's policy did. Put it back before going on:
+
+```bash,run
+sy threshold 0.6
+```
 
 ## Ask a real judge
 
@@ -133,22 +137,27 @@ python3 $SY_ROOT/bench/polaris_bench.py --episodes 60 --sweep 0.4,0.6,0.8 --json
 ```
 
 Read the `to large` column first: the share of steps that escalated. It climbs with the
-threshold. Task success climbs with it, and so does spend. **USD/success** is cost per
-completed task, the number to compare, and the one Kong's and NVIDIA's own benchmarks report.
+threshold, and task success climbs with it.
 
-Three things to look for:
+Then decide what you are buying. **USD/success** (cost per completed task) on its own favours
+`sy-small`: it is so cheap that it wins even though it fails two tasks in three, because the
+number does not count what a failed task costs you. So start from a success target, say close
+to `sy-large`'s, and find the cheapest setting that meets it. In a typical run `auto@0.8` finishes
+about eight tasks in ten against `sy-large`'s nine, for 10 to 20 percent less per completed task;
+`auto@0.4` is cheaper per step but fails too often to count.
 
-- The lowest USD/success is usually at a middle threshold, below both fixed models.
-- `+judge` is the price of deciding: one call to the small model per step, about 1,150 tokens
-  of prompt. At this lab's prices it costs about a third of a large-model step. Routing pays
-  only when the judge keeps enough steps on the small model. A cheaper or cached judge widens
-  the margin.
-- At a high threshold the router escalates nearly everything and pays for the judge as well.
-  That is worse than calling the large model directly.
+Two more things in the table:
 
-Prices and success rates are simulated, and with 60 tasks two runs can differ by several
-points. On real models the curve keeps its shape; where it bottoms out depends on your models,
-your prices and your workload. That is why the threshold is a setting and not a constant.
+- `+judge` is the price of deciding, the same at every threshold: one call per step with about
+  1,150 tokens of prompt. In this lab it costs as much as the answers do at the low thresholds.
+  Judging once per conversation, a smaller judge or a cached prompt shrinks it.
+- The gain is modest here because the lab's large model is cheap ($2 and $8 per million tokens).
+  Against a frontier model at tens of dollars per million output tokens, the same escalation
+  share saves far more.
+
+With 60 simulated tasks two runs can differ by several points, so do not read too much into one
+row. On real models the trade-off has the same parts; where it lands depends on your models, your
+prices and your workload. That is why the threshold is a setting and not a constant.
 
 Click **Check** when `/root/sweep.json` has a finished sweep. If this lab has the Nemotron judge, the
 check also wants one step judged by it, and calls it once through the judge proxy.
