@@ -13,6 +13,10 @@
 //! bridge reports the response headers and the end of the body back, so the picker sees the
 //! request finish, as it would behind a gateway.
 //!
+//! Any other header the picker sets is added to the forwarded request, and a body it replaces
+//! is forwarded instead, as a gateway applies an ext_proc mutation. Dynamo's frontend sidecar in
+//! direct mode, for example, serves the worker named in `x-dynamo-worker-instance-id`.
+//!
 //! Failure policy follows the pool's FailOpen: if the picker cannot be reached or does not
 //! answer within `pick_timeout_ms`, the request goes to the pool's Service instead. An
 //! immediate response from the picker (for example 429 when every pod is saturated) is
@@ -30,11 +34,12 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue as HttpHeaderValue, Method, 
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use envoy_types::pb::envoy::config::core::v3::{HeaderMap as PbHeaderMap, HeaderValue};
+use envoy_types::pb::envoy::service::ext_proc::v3::body_mutation::Mutation as BodyMut;
 use envoy_types::pb::envoy::service::ext_proc::v3::external_processor_client::ExternalProcessorClient;
 use envoy_types::pb::envoy::service::ext_proc::v3::processing_request::Request as Req;
 use envoy_types::pb::envoy::service::ext_proc::v3::processing_response::Response as Resp;
 use envoy_types::pb::envoy::service::ext_proc::v3::{
-    HttpBody, HttpHeaders, ProcessingRequest, ProcessingResponse,
+    CommonResponse, HttpBody, HttpHeaders, ProcessingRequest, ProcessingResponse,
 };
 use futures::StreamExt;
 use tokio::sync::mpsc;
@@ -75,8 +80,8 @@ pub struct Bridge {
 /// What the picker decided.
 #[derive(Debug, PartialEq)]
 pub enum Pick {
-    /// Forward to this `ip:port`.
-    Endpoint(String),
+    /// Forward to this `ip:port`, with the picker's request mutations.
+    Endpoint(String, Mutations),
     /// The picker answered the request itself (status, body).
     Immediate(u16, Vec<u8>),
 }
@@ -160,6 +165,52 @@ fn header(key: &str, value: &str) -> HeaderValue {
     }
 }
 
+/// Request changes a picker asked for: headers to set, and a replacement body.
+#[derive(Debug, Default, PartialEq)]
+pub struct Mutations {
+    pub headers: Vec<(String, String)>,
+    pub body: Option<Vec<u8>>,
+}
+
+fn common_of(response: &ProcessingResponse) -> Option<&CommonResponse> {
+    match &response.response {
+        Some(Resp::RequestHeaders(h)) => h.response.as_ref(),
+        Some(Resp::RequestBody(b)) => b.response.as_ref(),
+        _ => None,
+    }
+}
+
+/// Adds the header and body mutations in one picker answer to `into`. Pseudo-headers and the
+/// destination header itself are left out: the bridge addresses the pod directly.
+pub fn collect_mutations(response: &ProcessingResponse, into: &mut Mutations) {
+    let Some(common) = common_of(response) else {
+        return;
+    };
+    if let Some(mutation) = &common.header_mutation {
+        for option in &mutation.set_headers {
+            let Some(h) = &option.header else { continue };
+            let key = h.key.to_ascii_lowercase();
+            if key.starts_with(':') || key == DESTINATION || HOP_BY_HOP.contains(&key.as_str()) {
+                continue;
+            }
+            let value = if h.raw_value.is_empty() {
+                h.value.clone()
+            } else {
+                String::from_utf8_lossy(&h.raw_value).into_owned()
+            };
+            into.headers.retain(|(k, _)| *k != key);
+            into.headers.push((key, value));
+        }
+    }
+    if let Some(BodyMut::Body(body)) = common
+        .body_mutation
+        .as_ref()
+        .and_then(|b| b.mutation.as_ref())
+    {
+        into.body = Some(body.clone());
+    }
+}
+
 /// The endpoint in a picker answer: the header mutation first, then `envoy.lb` metadata.
 /// A comma-separated list means primary first, then fallbacks; the primary is used.
 pub fn endpoint_of(response: &ProcessingResponse) -> Option<String> {
@@ -169,12 +220,7 @@ pub fn endpoint_of(response: &ProcessingResponse) -> Option<String> {
             .find(|s| !s.is_empty())
             .map(str::to_string)
     };
-    let common = match &response.response {
-        Some(Resp::RequestHeaders(h)) => h.response.as_ref(),
-        Some(Resp::RequestBody(b)) => b.response.as_ref(),
-        _ => None,
-    };
-    if let Some(mutation) = common.and_then(|c| c.header_mutation.as_ref()) {
+    if let Some(mutation) = common_of(response).and_then(|c| c.header_mutation.as_ref()) {
         for option in &mutation.set_headers {
             if let Some(h) = &option.header
                 && h.key.eq_ignore_ascii_case(DESTINATION)
@@ -231,6 +277,7 @@ async fn pick(
         .await
         .map_err(|s| format!("{}: {}", s.code(), s.message()))?
         .into_inner();
+    let mut mutations = Mutations::default();
     while let Some(message) = inbound.next().await {
         let message = message.map_err(|s| format!("{}: {}", s.code(), s.message()))?;
         if let Some(Resp::ImmediateResponse(immediate)) = &message.response {
@@ -241,10 +288,14 @@ async fn pick(
                 .unwrap_or(503);
             return Ok((Pick::Immediate(code, immediate.body.clone()), None));
         }
+        collect_mutations(&message, &mut mutations);
         if let Some(endpoint) = endpoint_of(&message) {
             // Drain the rest of the picker's answers in the background so its sends never block.
             tokio::spawn(async move { while inbound.next().await.is_some() {} });
-            return Ok((Pick::Endpoint(endpoint), Some(PickerStream { tx })));
+            return Ok((
+                Pick::Endpoint(endpoint, mutations),
+                Some(PickerStream { tx }),
+            ));
         }
     }
     Err("the picker closed the stream without choosing an endpoint".to_string())
@@ -284,6 +335,7 @@ async fn forward(
     // Only requests with a body carry a model for the picker to score; the rest (GET /v1/models)
     // go to the Service.
     let started = Instant::now();
+    let mut set = Mutations::default();
     let (target, how, stream) = if method == Method::POST && !body.is_empty() {
         let mut pb = vec![
             header(":method", method.as_str()),
@@ -313,7 +365,10 @@ async fn forward(
         )
         .await
         {
-            Ok(Ok((Pick::Endpoint(ep), stream))) => (format!("http://{ep}"), "epp", stream),
+            Ok(Ok((Pick::Endpoint(ep, m), stream))) => {
+                set = m;
+                (format!("http://{ep}"), "epp", stream)
+            }
             Ok(Ok((Pick::Immediate(code, payload), _))) => {
                 bridge
                     .metrics
@@ -349,20 +404,32 @@ async fn forward(
         .observe(started.elapsed().as_secs_f64());
     let pick_ms = started.elapsed().as_millis() as u64;
 
-    let send = |target: &str| {
+    // The picker's mutations apply only to the pod it picked, not to a fail-open retry.
+    let send = |target: &str, picked: bool| {
+        let body = match (&set.body, picked) {
+            (Some(b), true) => Bytes::from(b.clone()),
+            _ => body.clone(),
+        };
         let mut upstream = bridge
             .http
             .request(method.clone(), format!("{target}{path}"))
-            .body(body.clone());
+            .body(body);
         for (name, value) in &headers {
-            if !HOP_BY_HOP.contains(&name.as_str()) {
+            if !HOP_BY_HOP.contains(&name.as_str())
+                && !(picked && set.headers.iter().any(|(k, _)| k == name.as_str()))
+            {
                 upstream = upstream.header(name, value);
+            }
+        }
+        if picked {
+            for (k, v) in &set.headers {
+                upstream = upstream.header(k, v);
             }
         }
         upstream.header("x-request-id", &request_id).send()
     };
     let (mut target, mut how, mut stream) = (target, how, stream);
-    let mut sent = send(&target).await;
+    let mut sent = send(&target, how == "epp").await;
     // A picked pod that cannot be reached (it just went away) fails open like the picker does.
     if let Err(err) = &sent
         && how == "epp"
@@ -370,7 +437,7 @@ async fn forward(
     {
         tracing::warn!(pool = %pool_name, target = %target, %err, %request_id, "pool bridge: picked endpoint unreachable, failing open to the Service");
         (target, how, stream) = (pool.fallback_url.clone(), "fail-open", None);
-        sent = send(&target).await;
+        sent = send(&target, false).await;
     }
     let response = match sent {
         Ok(r) => r,
@@ -443,7 +510,7 @@ mod tests {
     use super::*;
     use envoy_types::pb::envoy::config::core::v3::HeaderValueOption;
     use envoy_types::pb::envoy::service::ext_proc::v3::{
-        CommonResponse, HeaderMutation, HeadersResponse,
+        BodyMutation, HeaderMutation, HeadersResponse,
     };
     use envoy_types::pb::google::protobuf::{Struct, Value, value::Kind};
 
@@ -499,6 +566,42 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(endpoint_of(&r).as_deref(), Some("10.1.2.3:8000"));
+    }
+
+    #[test]
+    fn mutations_keep_picker_headers_and_body() {
+        let mut r = headers_response("10.0.0.7:8000");
+        if let Some(Resp::RequestHeaders(h)) = &mut r.response {
+            let common = h.response.as_mut().unwrap();
+            let set = &mut common.header_mutation.as_mut().unwrap().set_headers;
+            for (k, v) in [
+                ("x-dynamo-worker-instance-id", "7f3a"),
+                (":authority", "x"),
+                ("Host", "y"),
+            ] {
+                set.push(HeaderValueOption {
+                    header: Some(HeaderValue {
+                        key: k.into(),
+                        value: v.into(),
+                        raw_value: vec![],
+                    }),
+                    ..Default::default()
+                });
+            }
+            common.body_mutation = Some(BodyMutation {
+                mutation: Some(BodyMut::Body(b"{}".to_vec())),
+            });
+        }
+        let mut m = Mutations::default();
+        collect_mutations(&r, &mut m);
+        assert_eq!(
+            m.headers,
+            vec![(
+                "x-dynamo-worker-instance-id".to_string(),
+                "7f3a".to_string()
+            )]
+        );
+        assert_eq!(m.body.as_deref(), Some(&b"{}"[..]));
     }
 
     #[test]

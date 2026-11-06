@@ -54,9 +54,15 @@ impl ExternalProcessor for Picker {
                         me.saw_model.store(body["model"] == "Qwen/Qwen3-0.6B", Ordering::SeqCst);
                         let response = match &me.endpoint {
                             Some(ep) => Resp::RequestHeaders(HeadersResponse { response: Some(CommonResponse {
-                                header_mutation: Some(HeaderMutation { set_headers: vec![HeaderValueOption {
-                                    header: Some(HeaderValue { key: DESTINATION.into(), value: String::new(), raw_value: ep.clone().into_bytes() }),
-                                    ..Default::default() }], ..Default::default() }),
+                                header_mutation: Some(HeaderMutation { set_headers: vec![
+                                    HeaderValueOption {
+                                        header: Some(HeaderValue { key: DESTINATION.into(), value: String::new(), raw_value: ep.clone().into_bytes() }),
+                                        ..Default::default() },
+                                    // as Dynamo's picker names the worker for the frontend sidecar
+                                    HeaderValueOption {
+                                        header: Some(HeaderValue { key: "x-dynamo-worker-instance-id".into(), value: "w-1".into(), raw_value: vec![] }),
+                                        ..Default::default() },
+                                ], ..Default::default() }),
                                 ..Default::default() }) }),
                             None => Resp::ImmediateResponse(ImmediateResponse {
                                 status: Some(HttpStatus { code: 429 }), body: b"saturated".to_vec(), ..Default::default() }),
@@ -75,9 +81,14 @@ impl ExternalProcessor for Picker {
 async fn http_server(name: &'static str) -> SocketAddr {
     let app = Router::new().route(
         "/v1/chat/completions",
-        post(move || async move {
+        post(move |h: axum::http::HeaderMap| async move {
+            let worker = h
+                .get("x-dynamo-worker-instance-id")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("none")
+                .to_string();
             (
-                [("x-served-by", name)],
+                [("x-served-by", name.to_string()), ("x-worker-seen", worker)],
                 format!("{{\"served\":\"{name}\"}}"),
             )
         }),
@@ -146,6 +157,11 @@ async fn forwards_to_the_pod_the_picker_chose() {
     assert_eq!(r.headers()["x-pool-pick"], "epp");
     assert_eq!(r.headers()["x-pool-endpoint"], pod.to_string().as_str());
     assert_eq!(r.headers()["x-served-by"], "pod");
+    assert_eq!(
+        r.headers()["x-worker-seen"],
+        "w-1",
+        "the picker's header reached the pod"
+    );
     assert_eq!(r.text().await.unwrap(), r#"{"served":"pod"}"#);
     assert!(
         p.saw_model.load(Ordering::SeqCst),
@@ -195,5 +211,10 @@ async fn fails_open_when_the_picked_pod_is_gone() {
     let r = ask(bridge(format!("http://{epp}"), svc).await).await;
     assert_eq!(r.status(), 200);
     assert_eq!(r.headers()["x-pool-pick"], "fail-open");
+    assert_eq!(
+        r.headers()["x-worker-seen"],
+        "none",
+        "no worker header on a fail-open retry"
+    );
     assert_eq!(r.text().await.unwrap(), r#"{"served":"service"}"#);
 }
