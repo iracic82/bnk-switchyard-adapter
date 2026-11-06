@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Every challenge starts by making sure the lab's logins and Topology tab are in place.
+bash "${SY_ROOT:-/root/switchyard}/instruqt/bnk-switchyard-routing/scripts/lab-extras.sh" || true
+exit 0

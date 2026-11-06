@@ -13,12 +13,16 @@ mock-llm's verdict where it gives one; for other servers the bench draws it with
 is not in the response usage; it is estimated from the classifier prompt size and listed apart.
 
   python3 bench/polaris_bench.py --url http://172.16.100.19 --key-file /root/.bnk/aigw/switchyard-eng-key.key
+
+--sweep 0.3,0.5,0.7 runs "auto" once per judge threshold (the lab's `sy threshold` sets it and restarts
+the router), after one run each of sy-small and sy-large, and puts the original threshold back.
 """
 
 import argparse
 import json
 import os
 import statistics
+import subprocess
 import sys
 import time
 import urllib.error
@@ -87,6 +91,18 @@ def run(url, key, model, episodes, args):
     }
 
 
+def set_threshold(value):
+    out = subprocess.run(["sy", "threshold", str(value)], capture_output=True, text=True)
+    if out.returncode != 0:
+        sys.exit(f"sy threshold {value} failed: {out.stdout}{out.stderr}")
+    return out.stdout.strip()
+
+
+def current_threshold():
+    out = subprocess.run(["sy", "threshold"], capture_output=True, text=True).stdout
+    return out.strip().rsplit(" ", 1)[-1] if out.strip() else None
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--url", default="http://172.16.100.19")
@@ -100,6 +116,7 @@ def main():
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--timeout", type=float, default=120)
     p.add_argument("--json", help="also write the results here")
+    p.add_argument("--sweep", help="judge thresholds to run auto at, e.g. 0.3,0.5,0.7,0.9")
     args = p.parse_args()
     key = open(args.key_file).read().strip()
     episodes = generate(args.episodes, args.seed, 0.3)
@@ -107,17 +124,34 @@ def main():
     print("Simulated backends: small pool mock-llm, large pool llm-d's vLLM simulator. Task success for")
     print("steps the simulator served is drawn by this bench at mock-llm's rates.\n")
     results = []
-    for m in args.models.split(","):
-        print(f"  running {m} ...", flush=True)
-        results.append(run(args.url, key, m, episodes, args))
+    if args.sweep:
+        before = current_threshold()
+        for m in ("sy-small", "sy-large"):
+            print(f"  running {m} ...", flush=True)
+            results.append(run(args.url, key, m, episodes, args))
+        try:
+            for t in args.sweep.split(","):
+                print(f"  threshold {t}: {set_threshold(t)}", flush=True)
+                r = run(args.url, key, "auto", episodes, args)
+                r["model"], r["threshold"] = f"auto@{t}", float(t)
+                results.append(r)
+        finally:
+            if before:
+                print(f"  threshold back to {before}: {set_threshold(before)}", flush=True)
+    else:
+        for m in args.models.split(","):
+            print(f"  running {m} ...", flush=True)
+            results.append(run(args.url, key, m, episodes, args))
     print()
-    print(f"{'model':<9} {'task success':>12} {'errors':>6} {'served small/large':>18} {'EPP picks':>9} "
+    print(f"{'model':<10} {'task success':>12} {'errors':>6} {'small/large':>11} {'to large':>8} {'EPP picks':>9} "
           f"{'cost USD':>9} {'+judge':>7} {'USD/success':>11} {'p50 s':>6} {'p95 s':>6}")
     for r in results:
-        sl = f"{r['served'].get('sy-small', 0)}/{r['served'].get('sy-large', 0) + r['served'].get('sy-dynamo', 0)}"
+        small, large = r["served"].get("sy-small", 0), r["served"].get("sy-large", 0) + r["served"].get("sy-dynamo", 0)
+        r["to_large"] = large / (small + large) if small + large else 0.0
         cps = f"{r['cost_per_successful_task']:.5f}" if r["cost_per_successful_task"] else "-"
-        print(f"{r['model']:<9} {r['task_success']:>12.0%} {r['errors']:>6} {sl:>18} {r['picked_by_epp']:>9} "
-              f"{r['cost_usd']:>9.4f} {r['judge_usd']:>7.4f} {cps:>11} {r['p50_s'] or 0:>6.2f} {r['p95_s'] or 0:>6.2f}")
+        print(f"{r['model']:<10} {r['task_success']:>12.0%} {r['errors']:>6} {f'{small}/{large}':>11} {r['to_large']:>8.0%} "
+              f"{r['picked_by_epp']:>9} {r['cost_usd']:>9.4f} {r['judge_usd']:>7.4f} {cps:>11} "
+              f"{r['p50_s'] or 0:>6.2f} {r['p95_s'] or 0:>6.2f}")
     print(f"\noutcomes drawn by the bench (no RESULT line in the answer): "
           + ", ".join(f"{r['model']} {r['outcomes_simulated_by_bench']}/{r['steps']}" for r in results))
     if args.json:

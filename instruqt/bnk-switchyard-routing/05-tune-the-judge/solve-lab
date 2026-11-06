@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -uo pipefail
+export SECRETS_DIR=${SECRETS_DIR:-/root/.bnk} KUBECONFIG=${KUBECONFIG:-/root/lab/clab/kubeconfig}
+python3 "${SY_ROOT:-/root/switchyard}/bench/polaris_bench.py" --episodes 30 --sweep 0.4,0.8 --json /root/sweep.json.tmp >/dev/null 2>&1
+# the check wants three thresholds; a third, shorter run keeps the solve quick
+python3 "${SY_ROOT:-/root/switchyard}/bench/polaris_bench.py" --episodes 20 --sweep 0.6 --json /root/sweep.json.mid >/dev/null 2>&1
+jq -s '.[0] + [.[1][] | select(.threshold != null)]' /root/sweep.json.tmp /root/sweep.json.mid > /root/sweep.json
+rm -f /root/sweep.json.tmp /root/sweep.json.mid
+exit 0

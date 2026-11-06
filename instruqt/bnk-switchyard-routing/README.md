@@ -1,6 +1,6 @@
 # Instruqt track: bnk-switchyard-routing
 
-Five challenges on one VM (`lab`, image `f5/aibnk`, n2-standard-32). `track_scripts/setup-lab`
+Six challenges on one VM (`lab`, image `f5/aibnk`, n2-standard-32). `track_scripts/setup-lab`
 runs the base install of bnk-ai-factory-clab at a pinned commit (fabric, kind, BNK 2.4.2 with
 the AI gateway), then two layers from this repository:
 
@@ -9,7 +9,7 @@ the AI gateway), then two layers from this repository:
   models `sy-small` and `sy-large`, two keys and a route on 172.16.100.19.
 - `scripts/instruqt-dynamo-layer.sh`: NVIDIA Dynamo with NATS, two Mocker workers, the fake
   GPU operator and KAI, F5's picker with `engine: dynamo`, and model `sy-dynamo`. Its first
-  stage runs while BNK installs. If it fails, the lab starts without challenge 5's pool.
+  stage runs while BNK installs. If it fails, the lab starts without challenge 6's pool.
 
 | Challenge | Shows | Check |
 |---|---|---|
@@ -17,7 +17,8 @@ the AI gateway), then two layers from this repository:
 | 02 model-to-pool | gateway, provider, pool bridge, InferencePool, pods; load spread | two or more small-pool pods picked |
 | 03 tenant-governance | model scope, the pilot key's token budget | the pilot key is refused |
 | 04 cost-of-a-decision | sy-small vs sy-large vs auto through the gateway | `/root/bench.json` with three rows |
-| 05 dynamo-pool | Dynamo behind F5's picker, `auto-dynamo` | a step routed to `sy-dynamo`, a picker choice in the Dynamo pool |
+| 05 tune-the-judge | the judge's threshold, swept through the gateway: escalations, success, cost per completed task | `/root/sweep.json` with three thresholds, escalations rising with the threshold |
+| 06 dynamo-pool | Dynamo behind F5's picker, `auto-dynamo` | a step routed to `sy-dynamo`, a picker choice in the Dynamo pool |
 
 Model servers: `mock-llm` (small pool, also the judge), llm-d's vLLM simulator (large pool),
 Dynamo's Mocker (Dynamo pool). None is a real model.

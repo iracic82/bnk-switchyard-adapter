@@ -46,7 +46,7 @@ step "registry mirrors"; bash "$I/05-registry-mirrors.sh"
 step "fabric + kind";    bash "$I/10-fabric.sh"
 step "cluster";          bash "$I/20-cluster.sh"
 # Dynamo, NATS, the Mocker workers and the GPU simulators need no BNK: they install while BNK does, as in
-# the base track. A failure there leaves the lab without challenge 5's pool, not without a lab.
+# the base track. A failure there leaves the lab without challenge 6's pool, not without a lab.
 DYN_LOG=/var/log/setup-dynamo-pre.log
 ( DYN_STAGE=pre bash "$SY_ROOT/scripts/instruqt-dynamo-layer.sh" >"$DYN_LOG" 2>&1 || echo "WARNING: the Dynamo pre stage failed" >>"$DYN_LOG" ) & DYN_PRE=$!
 step "BNK";              bash "$I/30-bnk.sh"
@@ -59,9 +59,9 @@ bash "$SY_ROOT/scripts/instruqt-kind-layer.sh" || fail "the Switchyard layer fai
 wait $DYN_PRE || true
 step "NVIDIA Dynamo pool (installed while BNK was)"; cat "$DYN_LOG"
 if grep -q "WARNING: the Dynamo pre stage failed" "$DYN_LOG"; then
-  echo "!! Dynamo did not install; the lab starts without the Dynamo pool (challenge 5)"
+  echo "!! Dynamo did not install; the lab starts without the Dynamo pool (challenge 6)"
 else
-  DYN_STAGE=post bash "$SY_ROOT/scripts/instruqt-dynamo-layer.sh" || echo "!! the Dynamo pool is not wired up; the lab starts without it (challenge 5)"
+  DYN_STAGE=post bash "$SY_ROOT/scripts/instruqt-dynamo-layer.sh" || echo "!! the Dynamo pool is not wired up; the lab starts without it (challenge 6)"
 fi
 
 step "logins for the assignments, the sy helper, and the Topology tab"

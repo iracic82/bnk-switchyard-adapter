@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -uo pipefail
+if ! jq -e '[.[] | select(.threshold != null and .steps > 0 and .errors < .steps / 2)] | length >= 3' /root/sweep.json >/dev/null 2>&1; then
+  fail-message "No finished sweep in /root/sweep.json yet. Run the benchmark with --sweep 0.4,0.6,0.8 --json /root/sweep.json and wait for the table."
+  exit 1
+fi
+if ! jq -e '[.[] | select(.threshold != null)] | sort_by(.threshold) | (.[0].to_large < .[-1].to_large)' /root/sweep.json >/dev/null 2>&1; then
+  fail-message "The highest threshold did not escalate more steps than the lowest. Check 'sy threshold' and run the sweep again."
+  exit 1
+fi
+exit 0

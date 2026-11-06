@@ -25,7 +25,7 @@ virtualmachines:
     SY_REPO: github.com/iracic82/bnk-switchyard-adapter.git
     SY_REF: main
     SY_IMAGE_REPO: docker.io/iracic82
-    SY_IMAGE_TAG: 0.3.5
+    SY_IMAGE_TAG: 0.3.6
 secrets:
 # Team secrets on the f5 team, write only.
 - name: FAR_PULL_B64

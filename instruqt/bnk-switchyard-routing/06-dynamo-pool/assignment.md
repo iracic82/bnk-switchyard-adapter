@@ -133,7 +133,7 @@ engineering key (model scope `sy-small`, `sy-large`):
 [[ Instruqt-Var key="SY_ENG_KEY" hostname="lab" ]]
 ```
 
-If a box above is empty, the lab is still filling it in. This prints the same logins:
+If a box above says `undefined`, this lab started before it could store them. This prints the same logins:
 
 ```bash,run
 sy logins

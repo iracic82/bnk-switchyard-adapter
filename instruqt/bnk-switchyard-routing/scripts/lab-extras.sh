@@ -8,20 +8,24 @@ LAB_ROOT=${LAB_ROOT:-/root/lab}; SY_ROOT=${SY_ROOT:-/root/switchyard}; SECRETS_D
 export KUBECONFIG=${KUBECONFIG:-$LAB_ROOT/clab/kubeconfig}
 HERE="$SY_ROOT/instruqt/bnk-switchyard-routing/scripts"
 
-# Runtime variables can be set only from lifecycle scripts (setup-lab, a challenge's setup-lab).
+# Runtime variables can be set only from lifecycle scripts (setup-lab, a challenge's setup-lab); from a
+# learner's terminal the agent refuses, quietly here.
 AGENT=$(command -v agent || true)
 [ -n "$AGENT" ] || { [ -x /opt/instruqt/bin/agent ] && AGENT=/opt/instruqt/bin/agent; }
-# outside a lifecycle script (a learner's terminal) the agent has no token and cannot set variables
-[ -n "${INSTRUQT_AUTH_TOKEN:-}" ] || AGENT=""
+stored=0
 if [ -n "$AGENT" ]; then
+  setvar() { "$AGENT" variable set "$1" "$2" >/dev/null 2>&1 && stored=$((stored + 1)); }
   u=$(kubectl -n f5-bnk get secret f5-aigateway-admin -o jsonpath='{.data.username}' 2>/dev/null | base64 -d)
   p=$(kubectl -n f5-bnk get secret f5-aigateway-admin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
-  [ -n "$u" ] && "$AGENT" variable set AIGW_USER "$u"
-  [ -n "$p" ] && "$AGENT" variable set AIGW_PASSWORD "$p"
+  [ -n "$u" ] && setvar AIGW_USER "$u"
+  [ -n "$p" ] && setvar AIGW_PASSWORD "$p"
   for k in eng pilot dynamo; do
     f="$SECRETS_DIR/aigw/switchyard-$k-key.key"
-    [ -s "$f" ] && "$AGENT" variable set "SY_$(echo "$k" | tr a-z A-Z)_KEY" "$(cat "$f")"
+    [ -s "$f" ] && setvar "SY_$(echo "$k" | tr a-z A-Z)_KEY" "$(cat "$f")"
   done
+fi
+if [ "$stored" -gt 0 ]; then
+  echo "   logins stored for the assignments ($stored values)"
 else
   echo "   logins not stored for the assignments from here (only setup scripts can); sy logins prints them"
 fi

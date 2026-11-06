@@ -6,6 +6,7 @@
 #   sy burst N [model] "prompt"      N requests in parallel: status, pod, pick, endpoint
 #   sy key [eng|pilot|dynamo]        print a virtual key
 #   sy logins                        the AI Gateway console login and every virtual key
+#   sy threshold [0..1]              show, or set, the judge threshold of Switchyard's auto routes
 #
 # The engineering key is used, or SY_KEY=pilot|dynamo; models sy-dynamo and auto-dynamo use the
 # dynamo key, the one whose scope includes the Dynamo pool.
@@ -48,6 +49,23 @@ case "${1:-}" in
     wait
     ;;
   key) key "${2:-eng}" ;;
+  threshold)
+    # Switchyard sends a step to the small model when the judge's p_solve >= the threshold.
+    get() { kubectl -n f5-bnk get cm switchyard-router-config -o jsonpath='{.data.adapter\.toml}'; }
+    cur=$(get | grep -oE 'base_threshold = [0-9.]+' | head -1 | awk '{print $3}')
+    if [ -z "${2:-}" ]; then echo "base_threshold = $cur"; exit 0; fi
+    [[ "$2" =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "threshold must be between 0 and 1"; exit 1; }
+    new=$(get | sed -E "s/base_threshold = [0-9.]+/base_threshold = $2/g")
+    kubectl -n f5-bnk patch cm switchyard-router-config --type merge \
+      -p "$(jq -n --arg v "$new" '{data:{"adapter.toml":$v}}')" >/dev/null
+    kubectl -n f5-bnk rollout restart deploy/switchyard-router >/dev/null
+    kubectl -n f5-bnk rollout status deploy/switchyard-router --timeout=180s >/dev/null
+    # the gateway reconnects to the new router on its next request; wait until one goes through
+    for _ in $(seq 1 30); do
+      [ "$(post auto "ping" false 2>&1 >/dev/null | tr -d '\r' | awk 'tolower($1) ~ /^http/ {print $2}' | tail -1)" = 200 ] && break; sleep 2
+    done
+    echo "base_threshold: $cur -> $2 (the router restarted with it)"
+    ;;
   logins)
     s() { kubectl -n f5-bnk get secret f5-aigateway-admin -o jsonpath="{.data.$1}" | base64 -d; }
     echo "AI Gateway console (tab \"AI Gateway console\")"

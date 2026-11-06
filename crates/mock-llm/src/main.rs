@@ -174,33 +174,64 @@ fn task_tag(text: &str) -> Option<(String, bool)> {
     Some((id, hard))
 }
 
-/// Keyword heuristic standing in for a real judge model. Ignores benchmark tags.
-fn looks_hard(text: &str) -> bool {
-    let text = text.to_lowercase();
-    let text = match (text.find("[task:"), text.find(']')) {
-        (Some(a), Some(b)) if b > a => format!("{}{}", &text[..a], &text[b + 1..]),
-        _ => text,
-    };
-    const MARKERS: &[&str] = &[
-        "prove",
-        "design",
-        "architect",
-        "refactor",
-        "optimi",
-        "concurren",
-        "distributed",
-        "race condition",
-        "derive",
-        "trade-off",
-        "tradeoff",
-        "debug",
-        "migrate",
-        "formal",
-        "multi-step",
-        "root cause",
-    ];
-    MARKERS.iter().any(|m| text.contains(m)) || text.len() > 1500
+/// A graded stand-in for a real judge: a solve probability for the efficient model, from the
+/// wording (benchmark tags are ignored). Each hard marker lowers it, softer signals ("plan",
+/// "why") lower it a little, and a per-prompt jitter keeps prompts with the same markers apart.
+/// With `error_rate` the verdict is pushed far the wrong way, as a real judge sometimes is.
+/// Graded on purpose: a route's `base_threshold` then changes which steps escalate.
+fn judge_p_solve(text: &str, error_rate: f64) -> f64 {
+    use std::hash::{Hash, Hasher};
+    let text = strip_tag(&text.to_lowercase());
+    let hard = HARD_MARKERS
+        .iter()
+        .filter(|m| text.contains(*m))
+        .count()
+        .min(3) as f64;
+    let soft = SOFT_MARKERS
+        .iter()
+        .filter(|m| text.contains(*m))
+        .count()
+        .min(2) as f64;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut h);
+    let jitter = (h.finish() % 1000) as f64 / 1000.0 * 0.16 - 0.08;
+    let mut p = 0.88 - 0.22 * hard - 0.12 * soft + jitter;
+    if text.len() > 1500 {
+        p -= 0.2;
+    }
+    if rand::rng().random::<f64>() < error_rate {
+        p += if p < 0.55 { 0.35 } else { -0.35 };
+    }
+    (p.clamp(0.02, 0.98) * 100.0).round() / 100.0
 }
+
+const SOFT_MARKERS: &[&str] = &["plan", "why", "strategy", "while", "explain", "work out"];
+
+fn strip_tag(text: &str) -> String {
+    match (text.find("[task:"), text.find(']')) {
+        (Some(a), Some(b)) if b > a => format!("{}{}", &text[..a], &text[b + 1..]),
+        _ => text.to_string(),
+    }
+}
+
+const HARD_MARKERS: &[&str] = &[
+    "prove",
+    "design",
+    "architect",
+    "refactor",
+    "optimi",
+    "concurren",
+    "distributed",
+    "race condition",
+    "derive",
+    "trade-off",
+    "tradeoff",
+    "debug",
+    "migrate",
+    "formal",
+    "multi-step",
+    "root cause",
+];
 
 async fn chat(
     State(m): State<Arc<Mock>>,
@@ -255,14 +286,13 @@ async fn chat(
 
     // Decide the answer before taking a slot; generation time depends on its length.
     let (content, tool_call, finish) = if schema_name == Some("CapabilityClassifierDecision") {
-        let mut hard = looks_hard(&last_user);
-        if rand::rng().random::<f64>() < m.s.judge_error_rate {
-            hard = !hard;
-        }
-        let verdict = if hard {
-            json!({"crux": "multi-step reasoning or design work", "primary_rule": "LIM-1", "capability_boundary": "unsupported", "p_solve": 0.2})
+        let p = judge_p_solve(&last_user, m.s.judge_error_rate);
+        let verdict = if p >= 0.7 {
+            json!({"crux": "short, well-defined task", "primary_rule": "SUP-1", "capability_boundary": "supported", "p_solve": p})
+        } else if p >= 0.4 {
+            json!({"crux": "some reasoning; the small model may manage", "primary_rule": "UNC-1", "capability_boundary": "uncertain", "p_solve": p})
         } else {
-            json!({"crux": "short, well-defined task", "primary_rule": "SUP-1", "capability_boundary": "supported", "p_solve": 0.92})
+            json!({"crux": "multi-step reasoning or design work", "primary_rule": "LIM-1", "capability_boundary": "unsupported", "p_solve": p})
         };
         (verdict.to_string(), None, "stop")
     } else if body
@@ -397,5 +427,26 @@ struct SlotGuard {
 impl Drop for SlotGuard {
     fn drop(&mut self) {
         self.mock.running.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::judge_p_solve;
+
+    #[test]
+    fn judge_is_graded_by_wording() {
+        let easy = judge_p_solve("[task:a:easy] Translate 'good morning' into Spanish.", 0.0);
+        let one = judge_p_solve("Architect a retry strategy for a payment API.", 0.0);
+        let two = judge_p_solve("Find the root cause of this distributed deadlock.", 0.0);
+        assert!(easy >= 0.8, "easy {easy}");
+        assert!((0.4..0.75).contains(&one), "one marker {one}");
+        assert!(two < 0.55, "two markers {two}");
+        assert!(easy > one && one > two);
+        // the same prompt gets the same verdict without errors
+        assert_eq!(
+            judge_p_solve("Spell 'debug' backwards.", 0.0),
+            judge_p_solve("Spell 'debug' backwards.", 0.0)
+        );
     }
 }

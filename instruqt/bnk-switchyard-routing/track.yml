@@ -19,7 +19,9 @@ description: |-
   3. **Who may use which model.** Virtual keys, model scopes and a token budget that runs out.
   4. **The cost of a decision.** Run the same agent workload three ways and compare task
      success and cost per successful task.
-  5. **A Dynamo pool behind the same picker.** NVIDIA Dynamo as a third model: Switchyard
+  5. **Tune the judge.** One threshold decides how often a step escalates. Sweep it through
+     the gateway and find where cost per completed task bottoms out.
+  6. **A Dynamo pool behind the same picker.** NVIDIA Dynamo as a third model: Switchyard
      picks it, F5's picker reads Dynamo's KV events on NATS and names the worker.
 
   There are no GPUs: the large model pool runs llm-d's vLLM simulator, the small pool a
