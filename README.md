@@ -44,6 +44,18 @@ answer then goes to an InferencePool, where the EPP picks the GPU replica. Kong'
 describes model selection only; endpoint selection inside a model deployment is the part BNK
 adds here.
 
+Behind BNK's own AI gateway (Polaris) the shape matches Kong's: the gateway owns keys, scopes and
+budgets and asks Switchyard for the model. What this repository adds past that point, all
+verified on a BNK 2.4.2 lab:
+
+| | Kong AI Gateway + Switchyard | BNK AI gateway + Switchyard (this repository) |
+|---|---|---|
+| Which model | Switchyard decision service | Switchyard over ext_proc, in the gateway's model-router slot |
+| Which replica of that model | not covered | F5's endpoint picker, per request, from queue and KV-cache metrics |
+| Self-hosted engines | not covered | vLLM-compatible pools and NVIDIA Dynamo (the picker reads Dynamo's KV events on NATS) |
+| Scope after the router decides | not shown | the gateway checks the key's scope on the model Switchyard chose (a key outside it gets 403) |
+| Cost per completed task vs threshold | reported (43.7% lower at threshold 0.5 vs 0.3) | measured by the learner in the lab: `polaris_bench.py --sweep` |
+
 ## Architecture
 
 ```mermaid
@@ -140,13 +152,32 @@ answer within `pick_timeout_ms` or the chosen pod is gone, the bridge fails open
 Service, as `failureMode: FailOpen` says. Every response carries `x-pool-pick` (`epp`,
 `fail-open`, `epp-refused`) and `x-pool-endpoint`; the counters are `sy_adapter_pool_bridge_*`.
 
+The bridge plays the gateway's part of the endpoint-picker contract in full:
+
+- **The picker's request mutations.** Every header the picker sets reaches the pod, and a body it
+  replaces is forwarded instead. NVIDIA Dynamo needs this: its worker's frontend sidecar, in
+  direct mode, serves the worker the picker names in `x-dynamo-worker-instance-id`. A client's
+  own copy of `x-dynamo-*` or `x-gateway-*` is dropped on every path, so a caller cannot choose
+  the worker.
+- **`default_max_tokens` per pool**, added to requests that set no output limit. Dynamo's Mocker
+  refuses a request without one.
+- **The live view.** Each pick (pool, pod, `epp` or `fail-open`, pick time) is published to
+  `/live`, next to Switchyard's decision for the same request.
+
+Two facts about Polaris shape the router side. It hands only model `auto` to its router, and
+checks any other model name against the caller's scope. So a caller picks another Switchyard
+route with the header `x-switchyard-use-route` on an `auto` request; the router honours it only
+for a route the tenant may use. And Polaris checks the key's scope again on the model the
+router chose, so the header cannot widen a key's scope (verified: a key without `sy-dynamo`
+gets 403).
+
 ## What was tested, and where
 
 | What | Where | Result |
 |---|---|---|
-| Rust unit tests (config, tenancy, picker answers) | `cargo test` | 14 pass |
-| Integration tests: upstream request shape, fallback, error passthrough, judge fail-open, routing timeout, ext_proc decisions and policy | in-process scripted upstreams | 11 pass |
-| Pool bridge against a scripted endpoint picker: forward to the picked pod, fail open (picker down, pod gone), picker refusal | in-process | 4 pass |
+| Rust unit tests (config, tenancy, picker answers and mutations, default output limit, graded judge) | `cargo test` | 17 pass |
+| Integration tests: upstream request shape, fallback, error passthrough, judge fail-open, routing timeout, ext_proc decisions and policy, the route header and its tenant limit | in-process scripted upstreams | 13 pass |
+| Pool bridge against a scripted endpoint picker: forward to the picked pod with the picker's headers, client routing headers dropped, fail open (picker down, pod gone), picker refusal | in-process | 4 pass |
 | 34 end-to-end checks: three algorithms, governance, streaming, tool calls, cancellation, metrics | local processes, `make demo-local` | all pass |
 | The same 34 checks with the real container images | kind cluster, suite run from a pod (`make kind-smoke`) | all pass |
 | Manifests against Gateway API v1.3.0, GAIE v1.4.0 and the F5EPP CRD from a BNK 2.4 cluster | strict server-side dry run on kind | 36 resources valid |
@@ -156,11 +187,35 @@ Service, as `failureMode: FailOpen` says. Every response carries `x-pool-pick` (
 | TMM consulting the F5EPP for a pool Gateway | BNK 2.4.2 lab, from outside the cluster | verified (24 of 24, both pods) |
 | Polaris → Switchyard → pool bridge → F5 EPP → pod, one chain | BNK 2.4.2 lab | verified (every request picked by the EPP, 5-10 ms per pick) |
 | Polaris provider pointing at a pool Gateway VIP | BNK 2.4.2 lab | reset; the reason the bridge exists |
+| Polaris → Switchyard → bridge → F5 EPP (engine dynamo) → NVIDIA Dynamo Mocker worker | Instruqt lab, 2026-11-06 | verified: picker chose the worker in about 1 ms, Dynamo served that worker |
+| A key whose scope lacks the model Switchyard chose | Instruqt lab | 403 from Polaris |
+| Large pool on llm-d's vLLM simulator behind the F5 EPP | Instruqt lab | verified |
+| A real judge on CPU (qwen2.5:1.5b in Ollama, 8 cores) | local | not viable: 7 to 35 s per decision, and verdicts Switchyard rejects as inconsistent |
 | Single-Gateway header-match overlay | needs a BNK cluster | **not tested** |
 | GPU, TTFT and EPP numbers on real hardware | needs GPUs | **not tested** |
 
 The hairpin path (pod to a BNK VIP and back into the cluster) has worked in an earlier BNK
 2.4 lab, with TMM SNATing the traffic. That is why the adapter never trusts a source address.
+
+## Hands-on lab (Instruqt)
+
+`instruqt/bnk-switchyard-routing/` is a six-lesson Instruqt track on one VM: the base BNK lab
+(fabric, kind, BNK 2.4.2 with the AI gateway), this router, three model pools and NVIDIA Dynamo.
+
+| Lesson | What the learner does |
+|---|---|
+| 1 Two decisions | sends easy and hard steps through the gateway; watches Switchyard pick the model and F5's picker pick the pod |
+| 2 From model name to GPU pod | follows a request from the gateway's address to the pod; a burst spreads across replicas |
+| 3 Who may use which model | a model outside the key's scope is refused; a pilot key's token budget runs out |
+| 4 The cost of a decision | runs one agent workload as small only, large only and `auto`; compares cost per completed task |
+| 5 Tune the judge | moves the judge threshold (`sy threshold`) and sweeps it through the gateway (`--sweep`): escalations, success and cost per completed task move together |
+| 6 A Dynamo pool | NVIDIA Dynamo as a third model; F5's picker reads Dynamo's KV events and names the worker |
+
+Pools: the small model is `mock-llm` (it also plays the judge, with a graded `p_solve`), the
+large model is llm-d's vLLM simulator, and the Dynamo pool is Dynamo's Mocker on nodes that report
+simulated H100s (run.ai's fake GPU operator). Every answer is simulated; every routing decision,
+pick, scope check and budget is real. Tabs: a Topology page that draws each live request along
+its path, the router's live view (model and pod per request), and the AI gateway console.
 
 ## Quick start (no cluster, no GPU)
 
@@ -329,6 +384,13 @@ tokens, so judging was $0.035, 16% of the Switchyard total. And the success gap 
 17 of 75 hard steps being sent to the small model; `base_threshold` is the knob for that
 trade. Full reports land in `bench/results/<timestamp>/`.
 
+`bench/polaris_bench.py` runs the same workload through BNK's AI gateway with a virtual key
+(gateway, Switchyard, pool bridge, F5 EPP), and reports task success, the share escalated to the
+large model, EPP picks, cost with the judge's share, and USD per completed task. With
+`--sweep 0.4,0.6,0.8` it runs `auto` once per judge threshold. Answers from servers that do not
+report a task result (the vLLM simulator, Dynamo's Mocker) get one drawn at the mock's rates,
+and the report says how many.
+
 ## Repository layout
 
 ```
@@ -339,10 +401,12 @@ deploy/k8s/base/     BNK manifests: Gateways, HTTPRoutes, InferencePools, F5EPPs
 deploy/k8s/overlays/ single internal Gateway variant (needs validation)
 deploy/k8s/models-real/  optional vLLM on GPUs, F5EPP for Dynamo
 deploy/kind-smoke/   kind-only config for the image smoke test
+deploy/instruqt/     router config for the lab (Polaris front door, pool bridge, Dynamo pool)
+scripts/instruqt-*   lab layers: pools, router and Polaris objects; NVIDIA Dynamo
 tests/e2e_local.py   end-to-end checks
 bench/               workload generator and benchmark runner
 observability/       Prometheus, Grafana, local compose
-instruqt/            Instruqt track for the demo
+instruqt/            the Instruqt track: lessons, sy helper, Topology page, setup
 docs/                feasibility report, troubleshooting, upstream assessment
 ```
 

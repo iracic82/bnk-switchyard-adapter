@@ -54,11 +54,12 @@ Look at what the judge says before changing anything. Send two steps and read `p
 
 ```bash,run
 sy ask "Convert 72 degrees Fahrenheit to Celsius."
-sy ask "Architect a retry and idempotency strategy for a payment API with at-least-once delivery."
+sy ask "Optimize this SQL query that scans the whole orders table."
 ```
 
-The first gets a high `p_solve`, so it stays on `sy-small`. The second lands in the middle.
-Whether it escalates depends on the threshold. See the current one:
+The first gets a high `p_solve` (around 0.9), so it stays on `sy-small`. The second lands in
+the middle, around 0.73: above the default threshold of 0.6, so it stays small too. Whether a
+middle step escalates depends on the threshold. See the current one:
 
 ```bash,run
 sy threshold
@@ -69,10 +70,11 @@ restarts it; the AI gateway reconnects on the next request:
 
 ```bash,run
 sy threshold 0.8
-sy ask "Architect a retry and idempotency strategy for a payment API with at-least-once delivery."
+sy ask "Optimize this SQL query that scans the whole orders table."
 ```
 
-At 0.8 the step escalates to `sy-large`. Nothing changed in the gateway, the keys or the pools.
+At 0.8 the same step, with the same `p_solve`, escalates to `sy-large`. (The judge is wrong on
+purpose one time in ten; if the answer surprises you, send it again.) Nothing changed in the gateway, the keys or the pools.
 Only the router's policy did.
 
 ## Sweep it

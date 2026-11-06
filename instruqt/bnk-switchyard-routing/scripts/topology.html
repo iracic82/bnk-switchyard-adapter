@@ -211,25 +211,30 @@ function draw(state) {
     if (!info) { g.style.opacity = .3; continue; }
     const c = text(e[0] + 86, e[1] - 18, counts["epp_" + pool] || "", "count", "end", g); c.id = "c-epp_" + pool;
     text(e[0], y - 46, info.server, "sub2");
-    info.pods.forEach((p, i) => path([[e[0] + 95, y], [985 + i * 130 - 58, y]], "", COLORS[pool]));
+    info.pods.forEach((p, i) => path([[e[0] + 95, y], [985 + i * 130 - 60, y]], "", COLORS[pool]));
     info.pods.forEach((p, i) => {
       const x = 985 + i * 130, nd = state.nodes[p.node] || {};
       const pg = el("g", { class: "pod" });
-      const ring = el("rect", { x: x - 58, y: y - 40, width: 116, height: 80, rx: 12, class: "ring", stroke: COLORS[pool] }, pg);
+      const ring = el("rect", { x: x - 60, y: y - 46, width: 120, height: 92, rx: 12, class: "ring", stroke: COLORS[pool] }, pg);
       ring.style.transformOrigin = `${x}px ${y}px`; ring.style.transformBox = "view-box";
-      const r = el("rect", { x: x - 58, y: y - 40, width: 116, height: 80, rx: 12, class: "body" }, pg);
+      const r = el("rect", { x: x - 60, y: y - 46, width: 120, height: 92, rx: 12, class: "body" }, pg);
       r.style.stroke = COLORS[pool]; r.style.opacity = p.ready ? 1 : .4;
-      text(x, y - 18, short(p.name), "ttl", "middle", pg);
-      text(x, y - 3, p.ip || "no IP", "sub2", "middle", pg);
+      text(x, y - 26, short(p.name), "ttl", "middle", pg);
+      text(x, y - 12, p.ip || "no IP", "sub2", "middle", pg);
+      text(x, y + 2, p.node.replace(/^bnk-/, ""), "sub2", "middle", pg);
       const gpus = parseInt(nd.gpus || "0", 10);
       if (gpus > 0) {
-        chips(pg, x - (Math.min(gpus, 8) * 11 - 3) / 2, y + 8, gpus, COLORS[pool]);
-        text(x, y + 32, `${gpus}× ${(nd.gpu_product || "GPU").replace("NVIDIA-", "").split("-")[0]} (sim)`, "sub2", "middle", pg);
-      } else text(x, y + 20, p.node, "sub2", "middle", pg);
-      const pc = text(x + 52, y - 26, counts[p.ip] || "", "count", "end", pg); pc.id = "c-" + p.ip;
+        chips(pg, x - (Math.min(gpus, 8) * 11 - 3) / 2, y + 12, gpus, COLORS[pool]);
+        text(x, y + 36, `${gpus}× ${(nd.gpu_product || "GPU").replace("NVIDIA-", "").split("-")[0]} (sim)`, "sub2", "middle", pg);
+      } else {
+        el("rect", { x: x - 21, y: y + 12, width: 42, height: 8, rx: 2, fill: "none", stroke: "var(--line)", "stroke-dasharray": "3 2" }, pg);
+        text(x, y + 36, "no GPU on this node", "sub2", "middle", pg);
+      }
+      const pc = text(x + 54, y - 32, counts[p.ip] || "", "count", "end", pg); pc.id = "c-" + p.ip;
       pg.addEventListener("click", () => {
         document.getElementById("info").innerHTML = `<h2>Pod</h2><h3>${p.name}</h3><p>${info.server}, pool ${pool}, on node ${p.node}` +
-          (gpus ? `. The fake GPU operator reports ${gpus} × ${nd.gpu_product} on that node; nothing here runs on a GPU` : "") +
+          (gpus ? `. The fake GPU operator reports ${gpus} × ${nd.gpu_product} on that node; nothing here runs on a GPU`
+                : `. That node has no simulated GPUs: the fake GPU operator labels only the worker nodes, and the scheduler may still place a replica on the control plane`) +
           `.</p><pre>kubectl -n aigw-models describe pod ${p.name} | head -25</pre>`;
       });
       if (p.ip) pods[p.ip] = { el: pg, pool, name: p.name, x, y };
@@ -237,7 +242,7 @@ function draw(state) {
   }
   if (poolsUp.dynamo) {
     node("nats", P.nats, 190, 46, "NATS", "Dynamo KV-cache events", "var(--dynamo)", "✶");
-    poolsUp.dynamo.pods.forEach((p, i) => path([[985 + i * 130, ROWS.dynamo + 40], [985 + i * 130, P.nats[1]], [P.nats[0] + 95, P.nats[1]]], "kv", "var(--dynamo)"));
+    poolsUp.dynamo.pods.forEach((p, i) => path([[985 + i * 130, ROWS.dynamo + 46], [985 + i * 130, P.nats[1]], [P.nats[0] + 95, P.nats[1]]], "kv", "var(--dynamo)"));
     path([[P.nats[0], P.nats[1] - 23], [P.nats[0], ROWS.dynamo + 32]], "kv", "var(--dynamo)");
   }
   document.getElementById("b-dynamo").disabled = !poolsUp.dynamo;
@@ -280,7 +285,7 @@ function onModel(ev) {
 function onPod(ev) {
   const pool = ev.pool, picked = ev.pick === "epp", color = picked ? COLORS[pool] || "var(--sy)" : "var(--open)";
   const e = P["epp_" + pool] || P.epp_small, pod = pods[ev.endpoint] || pods[(ev.endpoint || "").split(":")[0]];
-  const to = pod ? [pod.x - 58, pod.y] : [e[0] + 230, e[1]];
+  const to = pod ? [pod.x - 60, pod.y] : [e[0] + 230, e[1]];
   stats.pool++; if (picked) stats.epp++;
   const fwd = () => packet([[P.bridge[0] + 75, P.bridge[1]], [665, P.bridge[1]], [665, e[1]], [e[0] + 95, e[1]], to], color, 900, () => {
     if (pod) { pod.el.classList.remove("hit"); void pod.el.getBBox(); pod.el.classList.add("hit");

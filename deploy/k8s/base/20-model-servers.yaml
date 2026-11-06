@@ -18,6 +18,15 @@ spec:
         inference.switchyard.dev/pool: small
     spec:
       automountServiceAccountToken: false
+      # Prefer the nodes that report (simulated) GPUs, where a lab runs the fake GPU operator. A
+      # preference only: with no such node, or no room on one, the pod schedules anywhere.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - {key: run.ai/simulated-gpu-node-pool, operator: Exists}
       containers:
       - name: server
         image: mock-llm:dev
@@ -53,6 +62,15 @@ spec:
         inference.switchyard.dev/pool: large
     spec:
       automountServiceAccountToken: false
+      # Prefer the nodes that report (simulated) GPUs, where a lab runs the fake GPU operator. A
+      # preference only: with no such node, or no room on one, the pod schedules anywhere.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - {key: run.ai/simulated-gpu-node-pool, operator: Exists}
       containers:
       # The large pool runs llm-d's vLLM simulator, the one the Gateway API Inference Extension
       # community tests endpoint pickers with: vLLM's API and metrics, a real request queue
