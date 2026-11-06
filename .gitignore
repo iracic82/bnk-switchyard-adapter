@@ -2,3 +2,4 @@ target/
 *.log
 bench/results/
 .run/
+__pycache__/
