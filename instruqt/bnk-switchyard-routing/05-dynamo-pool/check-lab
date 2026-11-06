@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -uo pipefail
+# router log lines since the lab started, as JSON fields
+fields() { kubectl -n f5-bnk logs deploy/switchyard-router --since=4h 2>/dev/null | grep -F "\"$1\"" | jq -c '.fields' 2>/dev/null; }
+if ! fields "ext_proc routed" | jq -e 'select(.gateway_model=="sy-dynamo")' >/dev/null 2>&1; then
+  fail-message "Switchyard has not sent a step to sy-dynamo yet. Run the two auto-dynamo requests; if the judge sent the hard one to sy-small, run it again."
+  exit 1
+fi
+if ! fields "pool bridge forwarded" | jq -e 'select(.pool=="dynamo" and .pick=="epp" and .status==200)' >/dev/null 2>&1; then
+  fail-message "No request to the Dynamo pool was placed by F5's picker yet. Run the sy-dynamo request."
+  exit 1
+fi
+exit 0

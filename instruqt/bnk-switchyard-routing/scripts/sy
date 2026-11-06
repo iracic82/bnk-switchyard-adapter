@@ -4,13 +4,17 @@
 #   sy ask [model] "prompt"          model defaults to auto (Switchyard decides)
 #   sy stream [model] "prompt"       the same, streamed
 #   sy burst N [model] "prompt"      N requests in parallel: status, pod, pick, endpoint
-#   sy key [eng|pilot]               print a virtual key
+#   sy key [eng|pilot|dynamo]        print a virtual key
+#
+# The engineering key is used, or SY_KEY=pilot|dynamo; models sy-dynamo and auto-dynamo use the
+# dynamo key, the one whose scope includes the Dynamo pool.
 #
 # The client sits outside the cluster, behind the fabric's router, like a real caller.
 set -uo pipefail
 VIP=${SY_VIP:-172.16.100.19}
 KEYS=${SECRETS_DIR:-/root/.bnk}/aigw
 WHO=${SY_KEY:-eng}
+for a in "$@"; do case "$a" in sy-dynamo|auto-dynamo) WHO=${SY_KEY:-dynamo} ;; esac; done
 key() { cat "$KEYS/switchyard-$1-key.key"; }
 body() { jq -nc --arg m "$1" --arg p "$2" --argjson s "${3:-false}" '{model:$m,stream:$s,messages:[{role:"user",content:$p}]}'; }
 post() { # model prompt stream

@@ -1,0 +1,26 @@
+
+# --- Appended by scripts/instruqt-dynamo-layer.sh: NVIDIA Dynamo as a third pool. ---
+# Two Dynamo Mocker workers (dynamo-platform operator, KV events on NATS, nodes with simulated H100s).
+# F5's picker for the pool runs with engine dynamo: it reads the workers' KV events and names the worker
+# in x-dynamo-worker-instance-id; the bridge passes that header on, and the worker's frontend sidecar
+# (router mode direct) serves exactly that worker.
+[pool_bridge.pools.dynamo]
+epp = "http://model-pool-epp.__POOL_NS__.svc.cluster.local:9002"
+# Dynamo's own frontend and KV router, if the picker does not answer.
+fallback_url = "http://mocker-frontend.__POOL_NS__.svc.cluster.local:8000"
+
+[models.dynamo]
+provider_model = "Qwen/Qwen3-0.6B"
+gateway_model = "sy-dynamo"
+base_url = "http://mocker-frontend.__POOL_NS__.svc.cluster.local:8000/v1"
+inference_pool = "__POOL_NS__/model-pool"
+timeout_secs = 60
+cost = { input_per_1m_usd = 2.00, output_per_1m_usd = 8.00 }
+
+# Model "auto-dynamo": the same judge, with the Dynamo pool as the capable model.
+[routes.auto-dynamo]
+algorithm = "task_classifier"
+efficient = ["small"]
+capable = ["dynamo"]
+judge = "small"
+classifier = { base_threshold = 0.6, response_format_type = "json_schema", judge_deadline_ms = 3000 }

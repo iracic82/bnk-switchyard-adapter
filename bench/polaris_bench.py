@@ -29,7 +29,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from workload import generate, step_outcome  # noqa: E402
 
 # USD per million tokens (input, output): the prices the lab sets on the Polaris models.
-PRICES = {"sy-small": (0.10, 0.40), "sy-large": (2.00, 8.00)}
+PRICES = {"sy-small": (0.10, 0.40), "sy-large": (2.00, 8.00), "sy-dynamo": (2.00, 8.00)}
+LARGE = {"sy-large", "sy-dynamo"}
 JUDGE_PROMPT_TOKENS = 1150  # the capability classifier's prompt, about this size per decision
 
 
@@ -52,7 +53,7 @@ def call(url, key, model, step, timeout):
     served = doc.get("model", "")
     pin, pout = PRICES.get(served, (0.0, 0.0))
     text = ((doc.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-    ok, simulated = step_outcome(text, step, served == "sy-large", served)
+    ok, simulated = step_outcome(text, step, served in LARGE, served)
     return {"error": None, "seconds": time.monotonic() - t0, "served": served, "pod": pod, "pick": pick,
             "ok": ok, "simulated": simulated,
             "cost": usage.get("prompt_tokens", 0) * pin / 1e6 + usage.get("completion_tokens", 0) * pout / 1e6}
@@ -89,7 +90,10 @@ def run(url, key, model, episodes, args):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--url", default="http://172.16.100.19")
-    p.add_argument("--key-file", default=os.path.join(os.environ.get("SECRETS_DIR", "/root/.bnk"), "aigw/switchyard-eng-key.key"))
+    keys = os.path.join(os.environ.get("SECRETS_DIR", "/root/.bnk"), "aigw")
+    # the dynamo key's scope has all three models; without the Dynamo pool, the engineering key
+    dk = os.path.join(keys, "switchyard-dynamo-key.key")
+    p.add_argument("--key-file", default=dk if os.path.exists(dk) else os.path.join(keys, "switchyard-eng-key.key"))
     p.add_argument("--models", default="sy-small,sy-large,auto")
     p.add_argument("--episodes", type=int, default=30)
     p.add_argument("--concurrency", type=int, default=8)
@@ -110,7 +114,7 @@ def main():
     print(f"{'model':<9} {'task success':>12} {'errors':>6} {'served small/large':>18} {'EPP picks':>9} "
           f"{'cost USD':>9} {'+judge':>7} {'USD/success':>11} {'p50 s':>6} {'p95 s':>6}")
     for r in results:
-        sl = f"{r['served'].get('sy-small', 0)}/{r['served'].get('sy-large', 0)}"
+        sl = f"{r['served'].get('sy-small', 0)}/{r['served'].get('sy-large', 0) + r['served'].get('sy-dynamo', 0)}"
         cps = f"{r['cost_per_successful_task']:.5f}" if r["cost_per_successful_task"] else "-"
         print(f"{r['model']:<9} {r['task_success']:>12.0%} {r['errors']:>6} {sl:>18} {r['picked_by_epp']:>9} "
               f"{r['cost_usd']:>9.4f} {r['judge_usd']:>7.4f} {cps:>11} {r['p50_s'] or 0:>6.2f} {r['p95_s'] or 0:>6.2f}")

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -uo pipefail
+sy ask sy-dynamo "Summarize this support ticket in one sentence." >/dev/null 2>&1
+for _ in 1 2 3; do
+  sy ask auto-dynamo "Find the root cause of this distributed deadlock between the queue consumer and the lock service." >/dev/null 2>&1
+done
+exit 0
