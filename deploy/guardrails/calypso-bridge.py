@@ -5,7 +5,7 @@
 # short enum or identifier values and inline images. Audio or file attachments are flagged, since they cannot be
 # scanned as text. A body that is not JSON is scanned as it came. Everything else (fail closed, project id from
 # this pod) is unchanged.
-import json, os, ssl, urllib.request, urllib.error
+import json, os, re, ssl, urllib.request, urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 UPSTREAM = os.environ.get("CALYPSO_URL", "https://us1.calypsoai.app/backend/v1/scans")
@@ -14,13 +14,15 @@ PROJECT = os.environ.get("CALYPSO_PROJECT_ID", "")
 CTX = ssl.create_default_context()
 # Keys whose value is an identifier or enum. Only a short single-token string under them is left out; a longer
 # string, an object or a list under the same key is scanned like anything else.
-ENUM_KEYS = {"model", "role", "type", "id", "tool_call_id", "name", "object", "detail", "format"}
+ENUM_KEYS = {"model", "role", "type", "id", "tool_call_id", "object", "detail", "format"}
+INLINE_IMAGE = re.compile(r"data:image/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+")
+BLOB = re.compile(r"[A-Za-z0-9+/=_-]{512,}")   # a long run with no spaces: encoded content, not prose
 # Attachments that cannot be scanned as text: a request carrying one is flagged rather than half-scanned.
-OPAQUE_KEYS = {"input_audio", "file", "audio", "video"}
+OPAQUE_KEYS = {"input_audio", "file", "audio", "video", "file_data", "file_id", "file_url", "input_file", "document"}
 # Field names of the chat and responses APIs and of JSON Schema. Any other key is user-chosen (a tool parameter
 # name, a metadata key) and the model may read it, so it is scanned like a value.
 STD_KEYS = ENUM_KEYS | {
-    "messages", "content", "text", "tool_calls", "function", "arguments", "tools", "tool_choice", "functions",
+    "name", "messages", "content", "text", "tool_calls", "function", "arguments", "tools", "tool_choice", "functions",
     "description", "parameters", "properties", "required", "items", "enum", "additionalProperties", "strict",
     "prompt", "input", "instructions", "stream", "stream_options", "include_usage", "max_tokens",
     "max_completion_tokens", "temperature", "top_p", "n", "stop", "seed", "user", "metadata", "response_format",
@@ -48,12 +50,14 @@ def scan_text(raw):
                 return
             if key in ENUM_KEYS and len(o) <= 64 and not any(c.isspace() for c in o):
                 return
-            if key == "url" and o.startswith("data:image/"):
-                return   # an inline image: base64 would only drown the text
+            if key == "url" and INLINE_IMAGE.fullmatch(o):
+                return   # an inline raster image: base64 would only drown the text
+            if o.lstrip().lower().startswith("data:") or BLOB.search(o):
+                raise Unscannable("encoded content")
             parts.append(o)
         elif isinstance(o, list):
             for v in o:
-                walk(v, key)
+                walk(v)   # list items are not enum values, whatever key the list sits under
         elif isinstance(o, dict):
             for k, v in o.items():
                 if k in OPAQUE_KEYS and v:
