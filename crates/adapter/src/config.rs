@@ -50,6 +50,11 @@ pub struct BridgePool {
     /// The pool's Service, used when the picker is unavailable (FailOpen) and for requests
     /// without a body.
     pub fallback_url: String,
+    /// `max_tokens` added to chat requests that set neither `max_tokens` nor
+    /// `max_completion_tokens`. Some engines need one (Dynamo's Mocker refuses requests
+    /// without it); vLLM does not.
+    #[serde(default)]
+    pub default_max_tokens: Option<u32>,
 }
 
 #[derive(Deserialize, Clone)]

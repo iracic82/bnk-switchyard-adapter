@@ -75,6 +75,7 @@ const HOP_BY_HOP: &[&str] = &[
 struct Pool {
     picker: Channel,
     fallback_url: String,
+    default_max_tokens: Option<u32>,
 }
 
 pub struct Bridge {
@@ -105,6 +106,7 @@ impl Bridge {
                 Pool {
                     picker,
                     fallback_url: pool.fallback_url.trim_end_matches('/').to_string(),
+                    default_max_tokens: pool.default_max_tokens,
                 },
             );
         }
@@ -216,6 +218,21 @@ pub fn collect_mutations(response: &ProcessingResponse, into: &mut Mutations) {
     {
         into.body = Some(body.clone());
     }
+}
+
+/// Adds `max_tokens` to a JSON request body that sets no output limit. Other bodies are
+/// returned unchanged.
+pub fn with_default_max_tokens(body: Bytes, max_tokens: Option<u32>) -> Bytes {
+    let Some(n) = max_tokens else { return body };
+    let Ok(serde_json::Value::Object(mut map)) = serde_json::from_slice::<serde_json::Value>(&body)
+    else {
+        return body;
+    };
+    if map.contains_key("max_tokens") || map.contains_key("max_completion_tokens") {
+        return body;
+    }
+    map.insert("max_tokens".into(), n.into());
+    serde_json::to_vec(&map).map(Bytes::from).unwrap_or(body)
 }
 
 /// The endpoint in a picker answer: the header mutation first, then `envoy.lb` metadata.
@@ -339,6 +356,11 @@ async fn forward(
         .map(str::to_string)
         .unwrap_or_else(|| uuid::Uuid::now_v7().to_string());
 
+    let body = if method == Method::POST {
+        with_default_max_tokens(body, pool.default_max_tokens)
+    } else {
+        body
+    };
     // Only requests with a body carry a model for the picker to score; the rest (GET /v1/models)
     // go to the Service.
     let started = Instant::now();
@@ -610,6 +632,27 @@ mod tests {
             )]
         );
         assert_eq!(m.body.as_deref(), Some(&b"{}"[..]));
+    }
+
+    #[test]
+    fn default_max_tokens_only_when_unset() {
+        let b = |s: &str| Bytes::from(s.to_string());
+        let out = with_default_max_tokens(b(r#"{"model":"m"}"#), Some(256));
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&out).unwrap()["max_tokens"],
+            256
+        );
+        let kept =
+            with_default_max_tokens(b(r#"{"model":"m","max_completion_tokens":9}"#), Some(256));
+        assert_eq!(kept, b(r#"{"model":"m","max_completion_tokens":9}"#));
+        assert_eq!(
+            with_default_max_tokens(b("not json"), Some(256)),
+            b("not json")
+        );
+        assert_eq!(
+            with_default_max_tokens(b(r#"{"model":"m"}"#), None),
+            b(r#"{"model":"m"}"#)
+        );
     }
 
     #[test]

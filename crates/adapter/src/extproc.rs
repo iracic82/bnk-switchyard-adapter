@@ -10,6 +10,12 @@
 //!
 //! Configure the gateway with `request_body_mode: BUFFERED`. Requests whose `model` is not
 //! a Switchyard route pass through unchanged.
+//!
+//! A gateway may hand only one model name to its router (BNK's AI gateway passes `auto` and
+//! checks every other name against the caller's model scope). A caller then picks another
+//! Switchyard route with the request header `x-switchyard-use-route`. It is honoured only when
+//! the requested model is itself a route, and the selected model still has to be in the
+//! tenant's allowed models and, at the gateway, in the caller's scope.
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -34,6 +40,9 @@ use tonic::{Status, Streaming};
 
 use crate::http::AppState;
 use crate::live::LiveEvent;
+
+/// Request header that names the Switchyard route for a routed model name (see the module docs).
+pub const USE_ROUTE: &str = "x-switchyard-use-route";
 
 pub struct ExtProc {
     state: Arc<AppState>,
@@ -183,6 +192,13 @@ async fn decide_inner(
         ));
     }
     // Anything that is neither a model nor a Switchyard route passes through unchanged.
+    if !registry.routes.contains_key(&route_name) {
+        return Ok(BodyResponse::default());
+    }
+    let route_name = match headers.get(USE_ROUTE).and_then(|v| v.to_str().ok()) {
+        Some(r) if registry.routes.contains_key(r) => r.to_owned(),
+        _ => route_name,
+    };
     let Some(route) = registry.routes.get(&route_name).cloned() else {
         return Ok(BodyResponse::default());
     };

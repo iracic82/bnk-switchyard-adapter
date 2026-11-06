@@ -328,17 +328,27 @@ mod ext_proc {
 
     /// Plays the gateway: sends request headers, then the buffered body.
     async fn exchange(port: u16, body: Value) -> Vec<Resp> {
+        exchange_with(port, body, &[]).await
+    }
+
+    async fn exchange_with(port: u16, body: Value, extra: &[(&str, &str)]) -> Vec<Resp> {
         let mut client = ExternalProcessorClient::connect(format!("http://127.0.0.1:{port}"))
             .await
             .unwrap();
+        let mut list = vec![HeaderValue {
+            key: "x-request-id".into(),
+            raw_value: b"ep-1".to_vec(),
+            ..Default::default()
+        }];
+        for (k, v) in extra {
+            list.push(HeaderValue {
+                key: (*k).into(),
+                raw_value: v.as_bytes().to_vec(),
+                ..Default::default()
+            });
+        }
         let headers = HttpHeaders {
-            headers: Some(EnvoyHeaders {
-                headers: vec![HeaderValue {
-                    key: "x-request-id".into(),
-                    raw_value: b"ep-1".to_vec(),
-                    ..Default::default()
-                }],
-            }),
+            headers: Some(EnvoyHeaders { headers: list }),
             end_of_stream: false,
             ..Default::default()
         };
@@ -384,6 +394,39 @@ mod ext_proc {
                 let h = h.header.as_ref()?;
                 (h.key == key).then_some(h.raw_value.as_slice())
             })
+    }
+
+    #[tokio::test]
+    async fn route_header_picks_another_route_for_a_routed_model_only() {
+        let small = upstream("prov-small", Behaviour::Ok).await;
+        let large = upstream("prov-large", Behaviour::Ok).await;
+        let port = start(small.addr, large.addr).await;
+        let model_of = |r: &[Resp]| {
+            let Resp::RequestBody(body) = &r[1] else {
+                panic!("expected a body response")
+            };
+            let common = body.response.as_ref().expect("a mutation");
+            header(common, "x-switchyard-model").map(|v| v.to_vec())
+        };
+        // `auto` alone picks small for this prompt; the header selects the passthrough route.
+        let r = exchange_with(
+            port,
+            hello("auto"),
+            &[("x-switchyard-use-route", "fallback")],
+        )
+        .await;
+        assert_eq!(model_of(&r).as_deref(), Some(&b"large"[..]));
+        // A concrete model is not re-routed by the header.
+        let r = exchange_with(
+            port,
+            hello("small"),
+            &[("x-switchyard-use-route", "fallback")],
+        )
+        .await;
+        assert_eq!(model_of(&r).as_deref(), Some(&b"small"[..]));
+        // An unknown route name is ignored.
+        let r = exchange_with(port, hello("auto"), &[("x-switchyard-use-route", "nope")]).await;
+        assert_eq!(model_of(&r).as_deref(), Some(&b"small"[..]));
     }
 
     #[tokio::test]

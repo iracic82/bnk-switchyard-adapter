@@ -127,6 +127,7 @@ async fn bridge(epp: String, fallback: SocketAddr) -> SocketAddr {
             BridgePool {
                 epp,
                 fallback_url: format!("http://{fallback}"),
+                default_max_tokens: None,
             },
         )]),
     };
