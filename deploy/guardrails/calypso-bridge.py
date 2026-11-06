@@ -16,7 +16,7 @@ CTX = ssl.create_default_context()
 # string, an object or a list under the same key is scanned like anything else.
 ENUM_KEYS = {"model", "role", "type", "id", "tool_call_id", "object", "detail", "format"}
 INLINE_IMAGE = re.compile(r"data:image/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+")
-BLOB = re.compile(r"[A-Za-z0-9+/=_-]{512,}")   # a long run with no spaces: encoded content, not prose
+RUN = re.compile(r"[A-Za-z0-9+/=_-]+")   # runs found once each, so the scan stays linear in the body size
 # Attachments that cannot be scanned as text: a request carrying one is flagged rather than half-scanned.
 OPAQUE_KEYS = {"input_audio", "file", "audio", "video", "file_data", "file_id", "file_url", "input_file", "document"}
 # Field names of the chat and responses APIs and of JSON Schema. Any other key is user-chosen (a tool parameter
@@ -52,7 +52,7 @@ def scan_text(raw):
                 return
             if key == "url" and INLINE_IMAGE.fullmatch(o):
                 return   # an inline raster image: base64 would only drown the text
-            if o.lstrip().lower().startswith("data:") or BLOB.search(o):
+            if o.lstrip().lower().startswith("data:") or any(m.end() - m.start() >= 512 for m in RUN.finditer(o)):
                 raise Unscannable("encoded content")
             parts.append(o)
         elif isinstance(o, list):
