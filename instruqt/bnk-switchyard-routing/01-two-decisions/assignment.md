@@ -53,6 +53,10 @@ timelimit: 1200
 enhanced_loading: null
 ---
 
+Four tabs come with every lesson: **Terminal**, **Topology** (the request path, live),
+**Switchyard live view** and **AI Gateway console**. The console's username and password are at
+the end of this page, under **Logins for this lab**.
+
 The AI gateway's route for this lab is `172.16.100.19`. The `sy` helper sends requests to it
 from the `client` container, which sits outside the cluster behind the fabric's router, like a
 real caller. It uses the engineering team's virtual key.
@@ -104,11 +108,15 @@ Click **Check** once both models have answered an `auto` request.
 
 ## Logins for this lab
 
-The **AI Gateway console** tab asks for these:
+The **AI Gateway console** tab asks for these. Each box has a copy button.
+
+**Username**
 
 ```text
 [[ Instruqt-Var key="AIGW_USER" hostname="lab" ]]
 ```
+
+**Password**
 
 ```text
 [[ Instruqt-Var key="AIGW_PASSWORD" hostname="lab" ]]
@@ -117,6 +125,14 @@ The **AI Gateway console** tab asks for these:
 The `sy` helper picks the right virtual key for you. To call the gateway yourself, this is the
 engineering key (model scope `sy-small`, `sy-large`):
 
+**Engineering key**
+
 ```text
 [[ Instruqt-Var key="SY_ENG_KEY" hostname="lab" ]]
+```
+
+If a box above is empty, the lab is still filling it in. This prints the same logins:
+
+```bash,run
+sy logins
 ```

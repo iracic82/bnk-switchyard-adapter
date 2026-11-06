@@ -87,11 +87,15 @@ Click **Check** once the pilot key is being refused.
 
 ## Logins for this lab
 
-The **AI Gateway console** tab asks for these:
+The **AI Gateway console** tab asks for these. Each box has a copy button.
+
+**Username**
 
 ```text
 [[ Instruqt-Var key="AIGW_USER" hostname="lab" ]]
 ```
+
+**Password**
 
 ```text
 [[ Instruqt-Var key="AIGW_PASSWORD" hostname="lab" ]]
@@ -100,6 +104,14 @@ The **AI Gateway console** tab asks for these:
 The `sy` helper picks the right virtual key for you. To call the gateway yourself, this is the
 engineering key (model scope `sy-small`, `sy-large`):
 
+**Engineering key**
+
 ```text
 [[ Instruqt-Var key="SY_ENG_KEY" hostname="lab" ]]
+```
+
+If a box above is empty, the lab is still filling it in. This prints the same logins:
+
+```bash,run
+sy logins
 ```

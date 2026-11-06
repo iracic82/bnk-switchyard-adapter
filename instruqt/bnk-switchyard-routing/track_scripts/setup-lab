@@ -64,32 +64,8 @@ else
   DYN_STAGE=post bash "$SY_ROOT/scripts/instruqt-dynamo-layer.sh" || echo "!! the Dynamo pool is not wired up; the lab starts without it (challenge 5)"
 fi
 
-step "logins for the assignments, and the Topology tab"
-# Runtime variables: the assignments show them with [[ Instruqt-Var ... ]], ready to copy.
-AGENT=$(command -v agent || true); [ -n "$AGENT" ] || { [ -x /opt/instruqt/bin/agent ] && AGENT=/opt/instruqt/bin/agent; }
-if [ -n "$AGENT" ]; then
-  "$AGENT" variable set AIGW_USER "$(kubectl -n f5-bnk get secret f5-aigateway-admin -o jsonpath='{.data.username}' | base64 -d)" || true
-  "$AGENT" variable set AIGW_PASSWORD "$(kubectl -n f5-bnk get secret f5-aigateway-admin -o jsonpath='{.data.password}' | base64 -d)" || true
-  for k in eng pilot dynamo; do
-    f="$SECRETS_DIR/aigw/switchyard-$k-key.key"
-    [ -s "$f" ] && { "$AGENT" variable set "SY_$(echo $k | tr a-z A-Z)_KEY" "$(cat "$f")" || true; }
-  done
-else
-  echo "!! no Instruqt agent binary: the assignments will not show the logins"
-fi
-cat > /etc/systemd/system/sy-topology.service <<UNIT
-[Unit]
-Description=Switchyard lab topology page on :8092
-After=network-online.target docker.service
-[Service]
-Environment=KUBECONFIG=$LAB_ROOT/clab/kubeconfig SECRETS_DIR=$SECRETS_DIR
-ExecStart=/usr/bin/python3 $SY_ROOT/instruqt/bnk-switchyard-routing/scripts/topology.py --bind 0.0.0.0 --port 8092
-Restart=always
-RestartSec=2
-[Install]
-WantedBy=multi-user.target
-UNIT
-systemctl daemon-reload; systemctl enable --now sy-topology >/dev/null 2>&1; systemctl restart sy-topology
+step "logins for the assignments, the sy helper, and the Topology tab"
+LAB_ROOT=$LAB_ROOT SY_ROOT=$SY_ROOT SECRETS_DIR=$SECRETS_DIR bash "$SY_ROOT/instruqt/bnk-switchyard-routing/scripts/lab-extras.sh"
 
 cat > /etc/profile.d/switchyard.sh <<EOF
 export KUBECONFIG=$LAB_ROOT/clab/kubeconfig LAB_ROOT=$LAB_ROOT SY_ROOT=$SY_ROOT SECRETS_DIR=$SECRETS_DIR

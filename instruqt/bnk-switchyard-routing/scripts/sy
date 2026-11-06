@@ -5,6 +5,7 @@
 #   sy stream [model] "prompt"       the same, streamed
 #   sy burst N [model] "prompt"      N requests in parallel: status, pod, pick, endpoint
 #   sy key [eng|pilot|dynamo]        print a virtual key
+#   sy logins                        the AI Gateway console login and every virtual key
 #
 # The engineering key is used, or SY_KEY=pilot|dynamo; models sy-dynamo and auto-dynamo use the
 # dynamo key, the one whose scope includes the Dynamo pool.
@@ -47,5 +48,14 @@ case "${1:-}" in
     wait
     ;;
   key) key "${2:-eng}" ;;
-  *) sed -n '2,10p' "$0"; exit 1 ;;
+  logins)
+    s() { kubectl -n f5-bnk get secret f5-aigateway-admin -o jsonpath="{.data.$1}" | base64 -d; }
+    echo "AI Gateway console (tab \"AI Gateway console\")"
+    echo "  username: $(s username)"
+    echo "  password: $(s password)"
+    echo
+    echo "Virtual keys (Authorization: Bearer <key>, gateway http://$VIP/v1)"
+    for k in eng pilot dynamo; do [ -s "$KEYS/switchyard-$k-key.key" ] && printf '  %-7s %s\n' "$k" "$(key $k)"; done
+    ;;
+  *) sed -n '/^#  /p' "$0"; exit 1 ;;
 esac
