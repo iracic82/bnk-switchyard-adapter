@@ -17,6 +17,16 @@ CTX = ssl.create_default_context()
 ENUM_KEYS = {"model", "role", "type", "id", "tool_call_id", "name", "object", "detail", "format"}
 # Attachments that cannot be scanned as text: a request carrying one is flagged rather than half-scanned.
 OPAQUE_KEYS = {"input_audio", "file", "audio", "video"}
+# Field names of the chat and responses APIs and of JSON Schema. Any other key is user-chosen (a tool parameter
+# name, a metadata key) and the model may read it, so it is scanned like a value.
+STD_KEYS = ENUM_KEYS | {
+    "messages", "content", "text", "tool_calls", "function", "arguments", "tools", "tool_choice", "functions",
+    "description", "parameters", "properties", "required", "items", "enum", "additionalProperties", "strict",
+    "prompt", "input", "instructions", "stream", "stream_options", "include_usage", "max_tokens",
+    "max_completion_tokens", "temperature", "top_p", "n", "stop", "seed", "user", "metadata", "response_format",
+    "json_schema", "schema", "image_url", "url", "refusal", "reasoning_effort", "presence_penalty",
+    "frequency_penalty", "logprobs", "top_logprobs", "parallel_tool_calls", "chat_template_kwargs",
+    "enable_thinking", "store", "modalities", "logit_bias"}
 
 
 class Unscannable(Exception):
@@ -48,6 +58,8 @@ def scan_text(raw):
             for k, v in o.items():
                 if k in OPAQUE_KEYS and v:
                     raise Unscannable(k)
+                if k not in STD_KEYS and k.strip():
+                    parts.append(k)
                 walk(v, k)
 
     walk(req)
@@ -76,7 +88,7 @@ class H(BaseHTTPRequestHandler):
             return self._send({"outcome": "flagged", "reason": "body size"})
         try:
             got = json.loads(self.rfile.read(n))
-        except ValueError:
+        except (ValueError, RecursionError):
             return self._send({"outcome": "flagged", "reason": "bad json"})
         if not isinstance(got, dict) or not isinstance(got.get("input"), str):
             return self._send({"outcome": "flagged", "reason": "expected {\"input\": str}"})
@@ -84,8 +96,8 @@ class H(BaseHTTPRequestHandler):
             body = {"input": scan_text(got["input"])}
         except Unscannable as e:
             return self._send({"outcome": "flagged", "reason": f"unscannable attachment ({e})"})
-        except RecursionError:
-            return self._send({"outcome": "flagged", "reason": "nested too deep"})
+        except Exception as e:   # nested too deep, or anything unforeseen: never let a request through unscanned
+            return self._send({"outcome": "flagged", "reason": f"unscannable ({type(e).__name__})"})
         if PROJECT:
             body["project_id"] = PROJECT
         req = urllib.request.Request(UPSTREAM, data=json.dumps(body).encode(), method="POST",
